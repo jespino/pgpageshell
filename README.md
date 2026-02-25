@@ -1,5 +1,7 @@
 # pgpageshell
 
+[![Build with Ona](https://ona.com/build-with-ona.svg)](https://app.ona.com/#https://github.com/jespino/pgpageshell)
+
 An interactive shell for inspecting PostgreSQL data files at the page level.
 
 PostgreSQL stores all table and index data in 8 KB pages on disk. These pages
