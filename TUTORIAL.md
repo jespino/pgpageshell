@@ -24,7 +24,7 @@ mkdir -p pgdata
 docker run -d --name pgpagila \
   -e POSTGRES_PASSWORD=secret \
   -v $(pwd)/pgdata:/var/lib/postgresql/data \
-  postgres:16
+  postgres:18
 
 # Wait for it to be ready
 docker exec pgpagila pg_isready -U postgres

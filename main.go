@@ -1,11 +1,13 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/chzyer/readline"
 )
 
 func main() {
@@ -40,15 +42,7 @@ func main() {
 	fmt.Printf("pgpageshell - PostgreSQL Page Inspector\n")
 	fmt.Printf("File: %s (%d bytes, %d pages, detected: %s)\n", filename, fi.Size(), totalPages, fileType)
 	fmt.Println()
-	fmt.Println("Commands:")
-	fmt.Println("  page <n>    - select page number (0-based)")
-	fmt.Println("  cat         - hex dump of current page")
-	fmt.Println("  format      - ASCII art page layout")
-	fmt.Println("  info        - page header and special region details")
-	fmt.Println("  data        - line pointers and tuple data")
-	fmt.Println("  pages       - list all pages with summary")
-	fmt.Println("  help        - show this help")
-	fmt.Println("  quit/exit   - exit")
+	printHelp()
 	fmt.Println()
 
 	currentPage := 0
@@ -63,13 +57,47 @@ func main() {
 		}
 	}
 
-	scanner := bufio.NewScanner(os.Stdin)
+	completer := readline.NewPrefixCompleter(
+		readline.PcItem("page"),
+		readline.PcItem("cat"),
+		readline.PcItem("format"),
+		readline.PcItem("info"),
+		readline.PcItem("data"),
+		readline.PcItem("pages"),
+		readline.PcItem("help"),
+		readline.PcItem("quit"),
+		readline.PcItem("exit"),
+	)
+
+	rl, err := readline.NewEx(&readline.Config{
+		Prompt:            fmt.Sprintf("pgpageshell(page %d)> ", currentPage),
+		HistoryFile:       "/tmp/pgpageshell_history",
+		AutoComplete:      completer,
+		InterruptPrompt:   "^C",
+		EOFPrompt:         "quit",
+		HistorySearchFold: true,
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error initializing readline: %v\n", err)
+		os.Exit(1)
+	}
+	defer rl.Close()
+
 	for {
-		fmt.Printf("pgpageshell(page %d)> ", currentPage)
-		if !scanner.Scan() {
+		rl.SetPrompt(fmt.Sprintf("pgpageshell(page %d)> ", currentPage))
+		line, err := rl.Readline()
+		if err == readline.ErrInterrupt {
+			continue
+		}
+		if err == io.EOF {
+			fmt.Println("Bye.")
+			return
+		}
+		if err != nil {
 			break
 		}
-		line := strings.TrimSpace(scanner.Text())
+
+		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
@@ -83,15 +111,7 @@ func main() {
 			return
 
 		case "help", "h", "?":
-			fmt.Println("Commands:")
-			fmt.Println("  page <n>    - select page number (0-based)")
-			fmt.Println("  cat         - hex dump of current page")
-			fmt.Println("  format      - ASCII art page layout")
-			fmt.Println("  info        - page header and special region details")
-			fmt.Println("  data        - line pointers and tuple data")
-			fmt.Println("  pages       - list all pages with summary")
-			fmt.Println("  help        - show this help")
-			fmt.Println("  quit/exit   - exit")
+			printHelp()
 
 		case "page", "p":
 			if len(parts) < 2 {
@@ -163,4 +183,16 @@ func main() {
 			fmt.Printf("Unknown command: %s (type 'help' for commands)\n", cmd)
 		}
 	}
+}
+
+func printHelp() {
+	fmt.Println("Commands:")
+	fmt.Println("  page <n>    - select page number (0-based)")
+	fmt.Println("  cat         - hex dump of current page")
+	fmt.Println("  format      - ASCII art page layout")
+	fmt.Println("  info        - page header and special region details")
+	fmt.Println("  data        - line pointers and tuple data")
+	fmt.Println("  pages       - list all pages with summary")
+	fmt.Println("  help        - show this help")
+	fmt.Println("  quit/exit   - exit")
 }
