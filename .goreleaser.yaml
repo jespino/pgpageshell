@@ -1,0 +1,46 @@
+version: 2
+
+before:
+  hooks:
+    - cmd: sh -c "cd frontend && pnpm install --frozen-lockfile && pnpm run build"
+
+builds:
+  - id: pgpageshell-desktop
+    binary: pgpageshell
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - id: pgpageshell
+    builds:
+      - pgpageshell-desktop
+    format_overrides:
+      - goos: windows
+        format: zip
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+      - "^chore:"
+
+release:
+  github:
+    owner: jespino
+    name: pgpageshell
