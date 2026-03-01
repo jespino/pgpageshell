@@ -213,11 +213,12 @@ body {
 }
 
 .detail-panel {
-  height: 200px;
+  min-width: 260px;
+  max-width: 340px;
   background: #161b22;
-  border-top: 1px solid #30363d;
+  border-left: 1px solid #30363d;
   overflow-y: auto;
-  padding: 12px 20px;
+  padding: 12px 16px;
   flex-shrink: 0;
 }
 

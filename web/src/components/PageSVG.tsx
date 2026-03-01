@@ -6,12 +6,12 @@ import type {
   TooltipContent,
   SelectedElement,
 } from "../types";
+import { DetailPanel } from "./DetailPanel";
 
 interface PageSVGProps {
   detail: PageDetail;
   showTooltip: (evt: React.MouseEvent, content: TooltipContent) => void;
   hideTooltip: () => void;
-  onSelect: (element: SelectedElement) => void;
 }
 
 // Grid layout: 32 columns × 64 rows = 2048 cells, each cell = 4 bytes
@@ -166,12 +166,12 @@ export function PageSVG({
   detail,
   showTooltip,
   hideTooltip,
-  onSelect,
 }: PageSVGProps) {
   const cellMap = useMemo(() => buildCellMap(detail), [detail]);
   const tuples = detail.tuples ?? [];
   const linePointers = detail.line_pointers ?? [];
 
+  const [selectedElement, setSelectedElement] = useState<SelectedElement | null>(null);
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [hoveredRegion, setHoveredRegion] = useState<string | null>(null);
   const onHover = useCallback((cell: CellInfo) => {
@@ -257,7 +257,7 @@ export function PageSVG({
                   hideTooltip();
                   onUnhover();
                 }}
-                onClick={() => onSelect(cell.select)}
+                onClick={() => setSelectedElement(cell.select)}
                 onMouseEnter={() => onHover(cell)}
               />
             );
@@ -277,7 +277,7 @@ export function PageSVG({
                 <div
                   key={`lp-${lp.index}`}
                   className={`item-row${highlighted ? " item-row-highlight" : ""}`}
-                  onClick={() => onSelect({ type: "linp", data: lp })}
+                  onClick={() => setSelectedElement({ type: "linp", data: lp })}
                   onMouseMove={(evt) =>
                     showTooltip(evt, {
                       title: `Line Pointer #${lp.index}`,
@@ -321,7 +321,7 @@ export function PageSVG({
                 <div
                   key={`t-${t.index}`}
                   className={`item-row${highlighted ? " item-row-highlight" : ""}`}
-                  onClick={() => onSelect({ type: "tuple", data: t })}
+                  onClick={() => setSelectedElement({ type: "tuple", data: t })}
                   onMouseMove={(evt) => {
                     const rows: [string, string | number][] = [
                       ["Status", t.status],
@@ -354,6 +354,11 @@ export function PageSVG({
           </div>
         )}
       </div>
+
+      {/* Right: detail panel */}
+      {selectedElement && (
+        <DetailPanel element={selectedElement} detail={detail} />
+      )}
     </div>
   );
 }

@@ -1,20 +1,17 @@
 import { useCallback, useEffect, useState } from "react";
-import type { FileInfo, PageDetail, TooltipContent, TooltipState, SelectedElement } from "../types";
+import type { FileInfo, PageDetail, TooltipContent, TooltipState } from "../types";
 import { Sidebar } from "./Sidebar";
 import { PageSVG } from "./PageSVG";
 import { Tooltip } from "./Tooltip";
-import { DetailPanel } from "./DetailPanel";
 
 export function App() {
   const [fileInfo, setFileInfo] = useState<FileInfo | null>(null);
   const [selectedPage, setSelectedPage] = useState(0);
   const [pageDetail, setPageDetail] = useState<PageDetail | null>(null);
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
-  const [selectedElement, setSelectedElement] = useState<SelectedElement | null>(null);
 
   const loadPage = useCallback((n: number) => {
     setSelectedPage(n);
-    setSelectedElement(null);
     fetch(`/api/page/${n}`)
       .then((r) => r.json())
       .then(setPageDetail);
@@ -57,13 +54,9 @@ export function App() {
               detail={pageDetail}
               showTooltip={showTooltip}
               hideTooltip={hideTooltip}
-              onSelect={setSelectedElement}
             />
           ) : (
             <div className="loading">Select a page</div>
-          )}
-          {selectedElement && pageDetail && (
-            <DetailPanel element={selectedElement} detail={pageDetail} />
           )}
         </div>
       </div>
