@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="logo.png" alt="pgpageshell" width="128">
+  <img src="logo.webp" alt="pgpageshell" width="128">
 
   # pgpageshell
 
