@@ -178,7 +178,7 @@ export function PageSVG({
     if (cell.itemIndex != null) {
       setHoveredIndex(cell.itemIndex);
       setHoveredRegion(null);
-    } else {
+    } else if (cell.regionType !== "free") {
       setHoveredIndex(null);
       setHoveredRegion(cell.regionType);
     }
