@@ -10,14 +10,13 @@ builds:
     tags: "{{ .Env.BUILD_TAGS }}"
     ldflags:
       - -s -w
+    env:
+      - CGO_ENABLED=1
+      - CGO_LDFLAGS={{ .Env.CGO_LDFLAGS }}
     goos:
       - "{{ .Env.GOOS }}"
     goarch:
-      - amd64
-      - arm64
-    ignore:
-      - goos: windows
-        goarch: arm64
+      - "{{ .Env.GOARCH }}"
 
 archives:
   - id: pgpageshell

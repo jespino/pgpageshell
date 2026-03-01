@@ -15,17 +15,37 @@ jobs:
         include:
           - runner: ubuntu-latest
             goos: linux
+            goarch: amd64
             build_tags: "production webkit2_41"
+            cgo_ldflags: ""
+            setup: |
+              sudo apt-get update -qq
+              sudo apt-get install -y -qq pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev
+          - runner: ubuntu-24.04-arm
+            goos: linux
+            goarch: arm64
+            build_tags: "production webkit2_41"
+            cgo_ldflags: ""
             setup: |
               sudo apt-get update -qq
               sudo apt-get install -y -qq pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev
           - runner: macos-latest
             goos: darwin
+            goarch: arm64
             build_tags: production
+            cgo_ldflags: "-framework UniformTypeIdentifiers"
+            setup: ""
+          - runner: macos-13
+            goos: darwin
+            goarch: amd64
+            build_tags: production
+            cgo_ldflags: "-framework UniformTypeIdentifiers"
             setup: ""
           - runner: windows-latest
             goos: windows
+            goarch: amd64
             build_tags: production
+            cgo_ldflags: ""
             setup: ""
     runs-on: ${{ matrix.runner }}
     steps:
@@ -56,11 +76,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
           BUILD_TAGS: ${{ matrix.build_tags }}
+          CGO_LDFLAGS: ${{ matrix.cgo_ldflags }}
 
       - uses: actions/upload-artifact@v4
         with:
-          name: artifacts-${{ matrix.goos }}
+          name: artifacts-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/**/*
           retention-days: 1
 
