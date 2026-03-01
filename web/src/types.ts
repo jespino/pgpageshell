@@ -6,6 +6,16 @@ export interface PageSummary {
   special_size: number;
 }
 
+export interface FileEntry {
+  index: number;
+  filename: string;
+  total_pages: number;
+}
+
+export interface FilesResponse {
+  files: FileEntry[];
+}
+
 export interface FileInfo {
   filename: string;
   total_pages: number;

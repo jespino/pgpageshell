@@ -12,16 +12,17 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "Usage: pgpageshell [--web [addr]] <postgres-data-file>\n")
+		fmt.Fprintf(os.Stderr, "Usage: pgpageshell [--web [addr]] <postgres-data-file> [file2 ...]\n")
 		fmt.Fprintf(os.Stderr, "  Inspect PostgreSQL heap/index data files page by page.\n")
 		fmt.Fprintf(os.Stderr, "\nOptions:\n")
 		fmt.Fprintf(os.Stderr, "  --web [addr]  Start web UI instead of shell (default: :8080)\n")
+		fmt.Fprintf(os.Stderr, "                Multiple files can be passed in web mode.\n")
 		os.Exit(1)
 	}
 
 	webMode := false
 	webAddr := ":8080"
-	var filename string
+	var filenames []string
 
 	args := os.Args[1:]
 	for i := 0; i < len(args); i++ {
@@ -32,15 +33,34 @@ func main() {
 				i++
 			}
 		} else {
-			filename = args[i]
+			filenames = append(filenames, args[i])
 		}
 	}
 
-	if filename == "" {
+	if len(filenames) == 0 {
 		fmt.Fprintf(os.Stderr, "Error: no data file specified\n")
 		os.Exit(1)
 	}
 
+	if webMode {
+		files := make([]WebFile, 0, len(filenames))
+		for _, fn := range filenames {
+			fi, err := os.Stat(fn)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+			totalPages := int(fi.Size() / PageSize)
+			if fi.Size()%PageSize != 0 {
+				fmt.Fprintf(os.Stderr, "Warning: %s size %d is not a multiple of %d\n", fn, fi.Size(), PageSize)
+			}
+			files = append(files, WebFile{Filename: fn, TotalPages: totalPages})
+		}
+		StartWebServer(files, webAddr)
+		return
+	}
+
+	filename := filenames[0]
 	fi, err := os.Stat(filename)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -50,11 +70,6 @@ func main() {
 	totalPages := int(fi.Size() / PageSize)
 	if fi.Size()%PageSize != 0 {
 		fmt.Fprintf(os.Stderr, "Warning: file size %d is not a multiple of %d\n", fi.Size(), PageSize)
-	}
-
-	if webMode {
-		StartWebServer(filename, totalPages, webAddr)
-		return
 	}
 
 	// Detect file type from page 0

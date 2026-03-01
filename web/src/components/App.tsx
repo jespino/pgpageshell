@@ -1,30 +1,48 @@
 import { useCallback, useEffect, useState } from "react";
-import type { FileInfo, PageDetail, TooltipContent, TooltipState } from "../types";
+import type { FileEntry, FilesResponse, FileInfo, PageDetail, TooltipContent, TooltipState } from "../types";
 import { Sidebar } from "./Sidebar";
 import { PageSVG } from "./PageSVG";
 import { Tooltip } from "./Tooltip";
 
 export function App() {
+  const [files, setFiles] = useState<FileEntry[]>([]);
+  const [selectedFileIdx, setSelectedFileIdx] = useState(0);
   const [fileInfo, setFileInfo] = useState<FileInfo | null>(null);
   const [selectedPage, setSelectedPage] = useState(0);
   const [pageDetail, setPageDetail] = useState<PageDetail | null>(null);
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
 
-  const loadPage = useCallback((n: number) => {
-    setSelectedPage(n);
-    fetch(`/api/page/${n}`)
-      .then((r) => r.json())
-      .then(setPageDetail);
-  }, []);
-
-  useEffect(() => {
-    fetch("/api/file")
+  const loadFile = useCallback((fileIdx: number) => {
+    setSelectedFileIdx(fileIdx);
+    setPageDetail(null);
+    setSelectedPage(0);
+    fetch(`/api/file/${fileIdx}`)
       .then((r) => r.json())
       .then((data: FileInfo) => {
         setFileInfo(data);
-        if (data.total_pages > 0) loadPage(0);
+        if (data.total_pages > 0) {
+          fetch(`/api/file/${fileIdx}/page/0`)
+            .then((r) => r.json())
+            .then(setPageDetail);
+        }
       });
-  }, [loadPage]);
+  }, []);
+
+  const loadPage = useCallback((n: number) => {
+    setSelectedPage(n);
+    fetch(`/api/file/${selectedFileIdx}/page/${n}`)
+      .then((r) => r.json())
+      .then(setPageDetail);
+  }, [selectedFileIdx]);
+
+  useEffect(() => {
+    fetch("/api/files")
+      .then((r) => r.json())
+      .then((data: FilesResponse) => {
+        setFiles(data.files);
+        if (data.files.length > 0) loadFile(0);
+      });
+  }, [loadFile]);
 
   const showTooltip = useCallback((evt: React.MouseEvent, content: TooltipContent) => {
     setTooltip({ x: evt.clientX + 12, y: evt.clientY + 12, content });
@@ -42,9 +60,23 @@ export function App() {
     <div className="app">
       <div className="topbar">
         <h1>pgpageshell</h1>
-        <span className="file-info">
-          {fileInfo.filename} — {fileInfo.total_pages} pages — {fileInfo.file_type}
-        </span>
+        {files.length > 1 ? (
+          <select
+            className="file-select"
+            value={selectedFileIdx}
+            onChange={(e) => loadFile(Number(e.target.value))}
+          >
+            {files.map((f) => (
+              <option key={f.index} value={f.index}>
+                {f.filename} ({f.total_pages} pages)
+              </option>
+            ))}
+          </select>
+        ) : (
+          <span className="file-info">
+            {fileInfo.filename} — {fileInfo.total_pages} pages — {fileInfo.file_type}
+          </span>
+        )}
       </div>
       <div className="main-content">
         <Sidebar fileInfo={fileInfo} selectedPage={selectedPage} onSelect={loadPage} />

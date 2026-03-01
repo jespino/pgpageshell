@@ -38,6 +38,27 @@ body {
   color: #8b949e;
 }
 
+.topbar .file-select {
+  font-family: inherit;
+  font-size: 12px;
+  background: #0d1117;
+  color: #c9d1d9;
+  border: 1px solid #30363d;
+  border-radius: 4px;
+  padding: 4px 8px;
+  cursor: pointer;
+  outline: none;
+}
+
+.topbar .file-select:hover {
+  border-color: #58a6ff;
+}
+
+.topbar .file-select:focus {
+  border-color: #58a6ff;
+  box-shadow: 0 0 0 1px #58a6ff;
+}
+
 .main-content {
   display: flex;
   flex: 1;

@@ -65,15 +65,60 @@ type PageDetail struct {
 	SpecialInfo  map[string]string `json:"special_info,omitempty"`
 }
 
-func StartWebServer(filename string, totalPages int, addr string) {
+// WebFile holds a filename and its page count, passed from main.
+type WebFile struct {
+	Filename   string
+	TotalPages int
+}
+
+// FilesResponse is returned by GET /api/files.
+type FilesResponse struct {
+	Files []FileEntry `json:"files"`
+}
+
+type FileEntry struct {
+	Index      int    `json:"index"`
+	Filename   string `json:"filename"`
+	TotalPages int    `json:"total_pages"`
+}
+
+func StartWebServer(files []WebFile, addr string) {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/api/file", func(w http.ResponseWriter, r *http.Request) {
-		handleFileInfo(w, r, filename, totalPages)
+	// GET /api/files — list all loaded files
+	mux.HandleFunc("/api/files", func(w http.ResponseWriter, r *http.Request) {
+		entries := make([]FileEntry, len(files))
+		for i, f := range files {
+			entries[i] = FileEntry{Index: i, Filename: f.Filename, TotalPages: f.TotalPages}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(FilesResponse{Files: entries})
 	})
 
-	mux.HandleFunc("/api/page/", func(w http.ResponseWriter, r *http.Request) {
-		handlePageDetail(w, r, filename, totalPages)
+	// GET /api/file/<index> — file info + page summaries
+	mux.HandleFunc("/api/file/", func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/api/file/")
+
+		// Check if this is /api/file/<index>/page/<n>
+		if parts := strings.SplitN(path, "/page/", 2); len(parts) == 2 {
+			fileIdx, err := strconv.Atoi(parts[0])
+			if err != nil || fileIdx < 0 || fileIdx >= len(files) {
+				http.Error(w, "invalid file index", http.StatusBadRequest)
+				return
+			}
+			f := files[fileIdx]
+			handlePageDetail(w, r, f.Filename, f.TotalPages, parts[1])
+			return
+		}
+
+		// Otherwise it's /api/file/<index>
+		fileIdx, err := strconv.Atoi(path)
+		if err != nil || fileIdx < 0 || fileIdx >= len(files) {
+			http.Error(w, "invalid file index", http.StatusBadRequest)
+			return
+		}
+		f := files[fileIdx]
+		handleFileInfo(w, r, f.Filename, f.TotalPages)
 	})
 
 	// Serve the embedded Vite build output, stripping the "web/dist" prefix
@@ -84,10 +129,8 @@ func StartWebServer(filename string, totalPages int, addr string) {
 	fileServer := http.FileServer(http.FS(distFS))
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		// For SPA routing: serve index.html for paths that don't match a real file
 		path := r.URL.Path
 		if path != "/" {
-			// Try to open the file; if it doesn't exist, serve index.html
 			f, err := distFS.Open(strings.TrimPrefix(path, "/"))
 			if err != nil {
 				r.URL.Path = "/"
@@ -99,7 +142,9 @@ func StartWebServer(filename string, totalPages int, addr string) {
 	})
 
 	fmt.Printf("pgpageshell web UI starting on %s\n", addr)
-	fmt.Printf("File: %s (%d pages)\n", filename, totalPages)
+	for i, f := range files {
+		fmt.Printf("  [%d] %s (%d pages)\n", i, f.Filename, f.TotalPages)
+	}
 	log.Fatal(http.ListenAndServe(addr, mux))
 }
 
@@ -145,10 +190,8 @@ func handleFileInfo(w http.ResponseWriter, r *http.Request, filename string, tot
 	json.NewEncoder(w).Encode(info)
 }
 
-func handlePageDetail(w http.ResponseWriter, r *http.Request, filename string, totalPages int) {
-	// Extract page number from /api/page/<n>
-	path := strings.TrimPrefix(r.URL.Path, "/api/page/")
-	pageNum, err := strconv.Atoi(path)
+func handlePageDetail(w http.ResponseWriter, r *http.Request, filename string, totalPages int, pageStr string) {
+	pageNum, err := strconv.Atoi(pageStr)
 	if err != nil || pageNum < 0 || pageNum >= totalPages {
 		http.Error(w, "invalid page number", http.StatusBadRequest)
 		return

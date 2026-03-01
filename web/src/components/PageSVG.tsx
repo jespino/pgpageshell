@@ -169,7 +169,6 @@ export function PageSVG({
 }: PageSVGProps) {
   const cellMap = useMemo(() => buildCellMap(detail), [detail]);
   const tuples = detail.tuples ?? [];
-  const linePointers = detail.line_pointers ?? [];
 
   const [selectedElement, setSelectedElement] = useState<SelectedElement | null>(null);
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
@@ -267,45 +266,6 @@ export function PageSVG({
 
       {/* Right: items list */}
       <div className="items-panel">
-        {linePointers.length > 0 && (
-          <div className="items-section">
-            <div className="items-section-title">Line Pointers ({linePointers.length})</div>
-            {linePointers.map((lp) => {
-              const sc = statusColor(lp.status);
-              const highlighted = hoveredIndex === lp.index;
-              return (
-                <div
-                  key={`lp-${lp.index}`}
-                  className={`item-row${highlighted ? " item-row-highlight" : ""}`}
-                  onClick={() => setSelectedElement({ type: "linp", data: lp })}
-                  onMouseMove={(evt) =>
-                    showTooltip(evt, {
-                      title: `Line Pointer #${lp.index}`,
-                      rows: [
-                        ["Status", lp.status],
-                        ["Points to", `offset ${lp.offset}, ${lp.length} bytes`],
-                      ],
-                    })
-                  }
-                  onMouseEnter={() => { setHoveredIndex(lp.index); setHoveredRegion(null); }}
-                  onMouseLeave={() => {
-                    hideTooltip();
-                    onUnhover();
-                  }}
-                >
-                  <span className="item-dot" style={{ background: sc }} />
-                  <span className="item-label">
-                    #{lp.index} {lp.status}
-                  </span>
-                  <span className="item-meta">
-                    → {lp.offset} ({lp.length}B)
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
         {tuples.length > 0 && (
           <div className="items-section">
             <div className="items-section-title">Tuples ({tuples.length})</div>
