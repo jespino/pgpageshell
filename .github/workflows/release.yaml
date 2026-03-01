@@ -9,8 +9,25 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    runs-on: ubuntu-latest
+  build:
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            goos: linux
+            build_tags: "production webkit2_41"
+            setup: |
+              sudo apt-get update -qq
+              sudo apt-get install -y -qq pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev
+          - runner: macos-latest
+            goos: darwin
+            build_tags: production
+            setup: ""
+          - runner: windows-latest
+            goos: windows
+            build_tags: production
+            setup: ""
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -28,9 +45,42 @@ jobs:
         with:
           version: 9
 
+      - name: Install system dependencies
+        if: matrix.setup != ''
+        run: ${{ matrix.setup }}
+
       - uses: goreleaser/goreleaser-action@v6
         with:
           version: "~> v2"
-          args: release --clean
+          args: release --clean --split
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GOOS: ${{ matrix.goos }}
+          BUILD_TAGS: ${{ matrix.build_tags }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: artifacts-${{ matrix.goos }}
+          path: dist/**/*
+          retention-days: 1
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: artifacts-*
+          path: dist
+          merge-multiple: true
+
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: continue --merge
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

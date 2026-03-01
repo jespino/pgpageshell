@@ -33,7 +33,36 @@ See [**TUTORIAL.md**](TUTORIAL.md) for a hands-on walkthrough that uses the
 Pagila sample database to explore heap pages, B-tree indexes, Hash indexes,
 GiST, GIN, and BRIN — all from the perspective of raw page data.
 
-## Building
+## Installation
+
+### Homebrew (macOS / Linux)
+
+```bash
+brew install jespino/tap/pgpageshell
+```
+
+### Debian / Ubuntu
+
+Download the `.deb` package from the [latest release](https://github.com/jespino/pgpageshell/releases/latest) and install it:
+
+```bash
+sudo dpkg -i pgpageshell_*.deb
+```
+
+### RPM (Fedora / RHEL)
+
+```bash
+sudo rpm -i pgpageshell_*.rpm
+```
+
+### Binary download
+
+Pre-built binaries for Linux, macOS, and Windows (amd64 and arm64) are
+available on the [releases page](https://github.com/jespino/pgpageshell/releases/latest).
+Download the archive for your platform, extract it, and place the binary in
+your `PATH`.
+
+### Building from source
 
 Requires Go 1.22+, Node.js 20+, and pnpm. [Wails v2](https://wails.io/) must
 be installed for the desktop build.
@@ -45,9 +74,6 @@ go install github.com/wailsapp/wails/v2/cmd/wails@latest
 # Build the desktop application
 make
 ```
-
-This builds the frontend (`frontend/`) and compiles the Go binary with the
-embedded assets.
 
 ## Usage
 
