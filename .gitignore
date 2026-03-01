@@ -1,0 +1,17 @@
+# Go
+pgpageshell
+*.exe
+*.test
+*.out
+
+# Frontend
+web/node_modules/
+web/dist/
+.pnpm-store/
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store

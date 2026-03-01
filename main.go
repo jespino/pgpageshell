@@ -12,12 +12,34 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "Usage: pgpageshell <postgres-data-file>\n")
+		fmt.Fprintf(os.Stderr, "Usage: pgpageshell [--web [addr]] <postgres-data-file>\n")
 		fmt.Fprintf(os.Stderr, "  Inspect PostgreSQL heap/index data files page by page.\n")
+		fmt.Fprintf(os.Stderr, "\nOptions:\n")
+		fmt.Fprintf(os.Stderr, "  --web [addr]  Start web UI instead of shell (default: :8080)\n")
 		os.Exit(1)
 	}
 
-	filename := os.Args[1]
+	webMode := false
+	webAddr := ":8080"
+	var filename string
+
+	args := os.Args[1:]
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--web" {
+			webMode = true
+			if i+1 < len(args) && strings.Contains(args[i+1], ":") {
+				webAddr = args[i+1]
+				i++
+			}
+		} else {
+			filename = args[i]
+		}
+	}
+
+	if filename == "" {
+		fmt.Fprintf(os.Stderr, "Error: no data file specified\n")
+		os.Exit(1)
+	}
 
 	fi, err := os.Stat(filename)
 	if err != nil {
@@ -28,6 +50,11 @@ func main() {
 	totalPages := int(fi.Size() / PageSize)
 	if fi.Size()%PageSize != 0 {
 		fmt.Fprintf(os.Stderr, "Warning: file size %d is not a multiple of %d\n", fi.Size(), PageSize)
+	}
+
+	if webMode {
+		StartWebServer(filename, totalPages, webAddr)
+		return
 	}
 
 	// Detect file type from page 0
