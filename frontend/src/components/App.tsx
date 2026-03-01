@@ -75,6 +75,7 @@ export function App() {
       <div className="app">
         <div className="welcome">
           <div className="welcome-content">
+            <img src="/logo.svg" alt="pgpageshell" className="welcome-logo" />
             <h1 className="welcome-title">pgpageshell</h1>
             <p className="welcome-subtitle">PostgreSQL Page Inspector</p>
             <p className="welcome-desc">
@@ -97,6 +98,7 @@ export function App() {
   return (
     <div className="app">
       <div className="topbar">
+        <img src="/logo.svg" alt="" className="topbar-logo" />
         <h1>pgpageshell</h1>
         <select
           className="file-select"

@@ -1,8 +1,12 @@
-# pgpageshell
+<div align="center">
+  <img src="logo.png" alt="pgpageshell" width="128">
 
-[![Build with Ona](https://ona.com/build-with-ona.svg)](https://app.ona.com/#https://github.com/jespino/pgpageshell)
+  # pgpageshell
 
-An interactive shell for inspecting PostgreSQL data files at the page level.
+  [![Build with Ona](https://ona.com/build-with-ona.svg)](https://app.ona.com/#https://github.com/jespino/pgpageshell)
+
+  A desktop application for inspecting PostgreSQL data files at the page level.
+</div>
 
 PostgreSQL stores all table and index data in 8 KB pages on disk. These pages
 have a well-defined binary format — headers, line pointers, tuple data, MVCC
@@ -31,167 +35,71 @@ GiST, GIN, and BRIN — all from the perspective of raw page data.
 
 ## Building
 
-Requires Go 1.22 or later.
+Requires Go 1.22+, Node.js 20+, and pnpm. [Wails v2](https://wails.io/) must
+be installed for the desktop build.
 
 ```bash
-go build -o pgpageshell .
+# Install Wails CLI (if not already installed)
+go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+# Build the desktop application
+make
 ```
+
+This builds the frontend (`frontend/`) and compiles the Go binary with the
+embedded assets.
 
 ## Usage
 
+### Desktop application (default)
+
 ```bash
-./pgpageshell <postgres-data-file>
+# Launch with no files — opens a welcome screen with an "Open File" button
+./pgpageshell
+
+# Launch with one or more files pre-loaded
+./pgpageshell /var/lib/postgresql/data/base/16384/17543
+./pgpageshell file1 file2 file3
 ```
 
-Point it at any file from PostgreSQL's data directory. You can find the file
-path for a table or index with:
+The GUI displays a page grid (32×64 cells, 4 bytes each) with color-coded
+regions: header, line pointers, tuples, free space, and special regions.
+Hovering a cell highlights related elements (e.g., a line pointer and its
+corresponding tuple). The sidebar lists pages and shows details for the
+selected element.
+
+You can open additional files or close existing ones from the toolbar at any
+time.
+
+<div align="center">
+  <img src="screenshot.png" alt="pgpageshell screenshot" width="800">
+</div>
+
+You can find the file path for a table or index with:
 
 ```sql
 SELECT pg_relation_filepath('my_table');
 -- Returns something like: base/16384/17543
 ```
 
-The file lives under your PostgreSQL data directory (e.g.,
-`/var/lib/postgresql/data/base/16384/17543`).
+### Interactive shell
 
-On startup, `pgpageshell` loads page 0 and auto-detects the page type:
-
-```
-$ ./pgpageshell /var/lib/postgresql/data/base/16384/17543
-pgpageshell - PostgreSQL Page Inspector
-File: /var/lib/postgresql/data/base/16384/17543 (16384 bytes, 2 pages, detected: heap)
-
-[page 0 loaded, type: heap]
-pgpageshell(page 0)>
+```bash
+./pgpageshell --shell <postgres-data-file>
 ```
 
-## Commands
+The shell provides text-based inspection of page internals:
 
-### `page <n>`
-
-Select a page by number (0-based). Pages are 8192 bytes each.
-
-```
-pgpageshell(page 0)> page 1
-[page 1 loaded, type: btree]
-```
-
-### `cat`
-
-Hex dump of the entire 8192-byte page, with ASCII sidebar.
-
-```
-pgpageshell(page 0)> cat
-00000000: 00 00 00 00 b0 8d f0 01  00 00 00 00 50 02 70 02  |............P.p.|
-00000010: 00 20 04 20 00 00 00 00  c8 9f 6e 00 90 9f 70 00  |. . ......n...p.|
-...
-```
-
-### `format`
-
-ASCII art visualization showing the page regions and their byte ranges.
-
-```
-pgpageshell(page 0)> format
-
-  Page Layout (page size: 8192, type: heap)
-
-+--------------------------------------------------------------+
-| Page Header (PageHeaderData)   [    0 -    23]    24 bytes   |
-+--------------------------------------------------------------+
-| Line Pointers (142 items)      [   24 -   591]   568 bytes   |
-+--------------------------------------------------------------+
-| Free Space                     [  592 -   623]    32 bytes   |
-+--------------------------------------------------------------+
-| Heap Tuples                    [  624 -  8191]  7568 bytes   |
-+--------------------------------------------------------------+
-
-  Proportional view:
-  [HHLLLLL.TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT]
-   H=Header  L=LinePointers  .=Free  T=Tuples  S=Special
-```
-
-### `info`
-
-Decoded page header fields and special region data. The special region is
-decoded according to the detected page type.
-
-For heap pages, the special region is empty. For index pages, you get the
-full opaque data structure. Meta pages also show the meta page content.
-
-```
-pgpageshell(page 0)> info
-
-=== Page Header (detected type: btree) ===
-  pd_lsn             : 0/01C77FF8
-  pd_checksum        : 0x0000 (0)
-  pd_flags           : 0x0000 [none]
-  pd_lower           : 72 (0x0048)
-  pd_upper           : 8176 (0x1FF0)
-  pd_special         : 8176 (0x1FF0)
-  pd_pagesize_version: 0x2004 (size: 8192, version: 4)
-  pd_prune_xid       : 0
-
-=== Special Region ===
-  B-tree Page Opaque Data (BTPageOpaqueData):
-    btpo_prev    : 0
-    btpo_next    : 0
-    btpo_level   : 0 (leaf)
-    btpo_flags   : 0x0003 [BTP_LEAF | BTP_ROOT]
-    btpo_cycleid : 0
-```
-
-### `data`
-
-Line pointer table followed by decoded tuple data. For heap pages, each tuple
-shows the full `HeapTupleHeaderData` (xmin, xmax, ctid, infomask flags, null
-bitmap) and a hex dump of the user data with printable strings extracted. For
-index pages, each tuple shows the `IndexTupleData` header (TID pointing to the
-heap, size, flags) and the key data.
-
-```
-pgpageshell(page 0)> data
-
-=== Line Pointers (Item IDs) [page type: heap] ===
-  Index  Status   Offset     Length   Raw
-  1      NORMAL   8136       56       0x00701FC8
-  2      NORMAL   8080       56       0x00701F90
-  ...
-
-=== Heap Tuples ===
-
---- Tuple 1 (offset 8136, length 56) ---
-  Tuple Header (HeapTupleHeaderData):
-    t_xmin       : 969
-    t_xmax       : 978
-    t_ctid       : (0, 1)
-    t_infomask   : 0x0192 [HAS_VARWIDTH | XMIN_COMMITTED]
-    t_hoff       : 24
-    User data (32 bytes at offset 8160):
-      00001fe0: 01 00 00 00 13 50 45 4e  45 4c 4f 50 45 ...
-    Printable strings:
-      "PENELOPE"
-      "GUINESS"
-```
-
-### `pages`
-
-Summary of all pages in the file: type, item count, free space, and special
-space size.
-
-```
-pgpageshell(page 0)> pages
-  Page   0: type=heap    items=142  free=32    special=0
-  Page   1: type=heap    items=58   free=4216  special=0
-```
-
-### `help`
-
-Show the command list.
-
-### `quit` / `exit`
-
-Exit the shell.
+| Command | Description |
+|---------|-------------|
+| `page <n>` | Select a page by number (0-based) |
+| `cat` | Hex dump of the entire 8192-byte page |
+| `format` | ASCII art visualization of page regions |
+| `info` | Decoded page header and special region data |
+| `data` | Line pointer table and decoded tuple data |
+| `pages` | Summary of all pages in the file |
+| `help` | Show command list |
+| `quit` | Exit |
 
 ## Supported Page Types
 
