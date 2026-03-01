@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import type { FileEntry, FilesResponse, FileInfo, PageDetail, TooltipContent, TooltipState } from "../types";
+import type { FileEntry, FilesResponse, FileInfo, PageDetail, TooltipContent, TooltipState, SelectedElement } from "../types";
 import { Sidebar } from "./Sidebar";
 import { PageSVG } from "./PageSVG";
 import { Tooltip } from "./Tooltip";
@@ -11,11 +11,13 @@ export function App() {
   const [selectedPage, setSelectedPage] = useState(0);
   const [pageDetail, setPageDetail] = useState<PageDetail | null>(null);
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
+  const [selectedElement, setSelectedElement] = useState<SelectedElement | null>(null);
 
   const loadFile = useCallback((fileIdx: number) => {
     setSelectedFileIdx(fileIdx);
     setPageDetail(null);
     setSelectedPage(0);
+    setSelectedElement(null);
     fetch(`/api/file/${fileIdx}`)
       .then((r) => r.json())
       .then((data: FileInfo) => {
@@ -30,6 +32,7 @@ export function App() {
 
   const loadPage = useCallback((n: number) => {
     setSelectedPage(n);
+    setSelectedElement(null);
     fetch(`/api/file/${selectedFileIdx}/page/${n}`)
       .then((r) => r.json())
       .then(setPageDetail);
@@ -79,13 +82,20 @@ export function App() {
         )}
       </div>
       <div className="main-content">
-        <Sidebar fileInfo={fileInfo} selectedPage={selectedPage} onSelect={loadPage} />
+        <Sidebar
+          fileInfo={fileInfo}
+          selectedPage={selectedPage}
+          onSelect={loadPage}
+          selectedElement={selectedElement}
+          pageDetail={pageDetail}
+        />
         <div className="viewer">
           {pageDetail ? (
             <PageSVG
               detail={pageDetail}
               showTooltip={showTooltip}
               hideTooltip={hideTooltip}
+              onSelect={setSelectedElement}
             />
           ) : (
             <div className="loading">Select a page</div>

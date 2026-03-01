@@ -1,12 +1,15 @@
-import type { FileInfo } from "../types";
+import type { FileInfo, PageDetail, SelectedElement } from "../types";
+import { DetailPanel } from "./DetailPanel";
 
 interface SidebarProps {
   fileInfo: FileInfo;
   selectedPage: number;
   onSelect: (pageNum: number) => void;
+  selectedElement: SelectedElement | null;
+  pageDetail: PageDetail | null;
 }
 
-export function Sidebar({ fileInfo, selectedPage, onSelect }: SidebarProps) {
+export function Sidebar({ fileInfo, selectedPage, onSelect, selectedElement, pageDetail }: SidebarProps) {
   return (
     <div className="sidebar">
       <div className="sidebar-header">Pages</div>
@@ -23,6 +26,15 @@ export function Sidebar({ fileInfo, selectedPage, onSelect }: SidebarProps) {
           </li>
         ))}
       </ul>
+      <div className="sidebar-detail">
+        {selectedElement && pageDetail ? (
+          <DetailPanel element={selectedElement} detail={pageDetail} />
+        ) : (
+          <div className="sidebar-placeholder">
+            Select a block to see its details
+          </div>
+        )}
+      </div>
     </div>
   );
 }
