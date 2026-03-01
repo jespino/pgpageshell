@@ -34,14 +34,6 @@ export const REGION_COLORS: Record<
   },
 };
 
-export const TUPLE_COLORS = [
-  { fill: "#1e2d3a", stroke: "#58a6ff", hover: "#2a3d4d" },
-  { fill: "#2a1e3a", stroke: "#bc8cff", hover: "#3a2d4d" },
-  { fill: "#1e3a2f", stroke: "#3fb950", hover: "#264d3b" },
-  { fill: "#3a2a1e", stroke: "#d29922", hover: "#4d3a2d" },
-  { fill: "#3a1e2a", stroke: "#f778ba", hover: "#4d2d3a" },
-];
-
 export function statusColor(status: string): string {
   switch (status) {
     case "NORMAL":

@@ -29,9 +29,17 @@ export function DetailPanel({ element, detail }: DetailPanelProps) {
         rows.push([k, v]);
       }
     }
+  } else if (element.type === "linp") {
+    const lp = element.data;
+    title = `Line Pointer #${lp.index}`;
+    rows.push(
+      ["Status", lp.status],
+      ["Points to offset", lp.offset],
+      ["Points to length", `${lp.length} bytes`]
+    );
   } else if (element.type === "tuple") {
     const t = element.data;
-    title = `Item ${t.index}`;
+    title = `Tuple ${t.index}`;
     rows.push(["Status", t.status], ["Offset", t.offset], ["Length", `${t.length} bytes`]);
     if (t.properties) {
       for (const [k, v] of Object.entries(t.properties)) {

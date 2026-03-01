@@ -61,4 +61,5 @@ export interface TooltipState {
 
 export type SelectedElement =
   | { type: "region"; data: PageRegion }
-  | { type: "tuple"; data: TupleInfo };
+  | { type: "tuple"; data: TupleInfo }
+  | { type: "linp"; data: LinePointerInfo };
