@@ -2,18 +2,13 @@ package main
 
 import (
 	"encoding/binary"
-	"encoding/json"
 	"fmt"
-	"io/fs"
-	"log"
-	"net/http"
-	"strconv"
 	"strings"
 )
 
 var binLE = binary.LittleEndian
 
-// JSON response types
+// JSON response types shared between web server and Wails bindings.
 
 type PageSummary struct {
 	PageNum     int    `json:"page_num"`
@@ -35,7 +30,7 @@ type PageRegion struct {
 	StartByte  int    `json:"start_byte"`
 	EndByte    int    `json:"end_byte"`
 	Size       int    `json:"size"`
-	RegionType string `json:"region_type"` // "header", "linp", "free", "tuple", "special"
+	RegionType string `json:"region_type"`
 }
 
 type LinePointerInfo struct {
@@ -65,148 +60,10 @@ type PageDetail struct {
 	SpecialInfo  map[string]string `json:"special_info,omitempty"`
 }
 
-// WebFile holds a filename and its page count, passed from main.
-type WebFile struct {
-	Filename   string
-	TotalPages int
-}
-
-// FilesResponse is returned by GET /api/files.
-type FilesResponse struct {
-	Files []FileEntry `json:"files"`
-}
-
 type FileEntry struct {
 	Index      int    `json:"index"`
 	Filename   string `json:"filename"`
 	TotalPages int    `json:"total_pages"`
-}
-
-func StartWebServer(files []WebFile, addr string) {
-	mux := http.NewServeMux()
-
-	// GET /api/files — list all loaded files
-	mux.HandleFunc("/api/files", func(w http.ResponseWriter, r *http.Request) {
-		entries := make([]FileEntry, len(files))
-		for i, f := range files {
-			entries[i] = FileEntry{Index: i, Filename: f.Filename, TotalPages: f.TotalPages}
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(FilesResponse{Files: entries})
-	})
-
-	// GET /api/file/<index> — file info + page summaries
-	mux.HandleFunc("/api/file/", func(w http.ResponseWriter, r *http.Request) {
-		path := strings.TrimPrefix(r.URL.Path, "/api/file/")
-
-		// Check if this is /api/file/<index>/page/<n>
-		if parts := strings.SplitN(path, "/page/", 2); len(parts) == 2 {
-			fileIdx, err := strconv.Atoi(parts[0])
-			if err != nil || fileIdx < 0 || fileIdx >= len(files) {
-				http.Error(w, "invalid file index", http.StatusBadRequest)
-				return
-			}
-			f := files[fileIdx]
-			handlePageDetail(w, r, f.Filename, f.TotalPages, parts[1])
-			return
-		}
-
-		// Otherwise it's /api/file/<index>
-		fileIdx, err := strconv.Atoi(path)
-		if err != nil || fileIdx < 0 || fileIdx >= len(files) {
-			http.Error(w, "invalid file index", http.StatusBadRequest)
-			return
-		}
-		f := files[fileIdx]
-		handleFileInfo(w, r, f.Filename, f.TotalPages)
-	})
-
-	// Serve the embedded Vite build output, stripping the "web/dist" prefix
-	distFS, err := fs.Sub(webDist, "web/dist")
-	if err != nil {
-		log.Fatalf("failed to create sub filesystem: %v", err)
-	}
-	fileServer := http.FileServer(http.FS(distFS))
-
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		path := r.URL.Path
-		if path != "/" {
-			f, err := distFS.Open(strings.TrimPrefix(path, "/"))
-			if err != nil {
-				r.URL.Path = "/"
-			} else {
-				f.Close()
-			}
-		}
-		fileServer.ServeHTTP(w, r)
-	})
-
-	fmt.Printf("pgpageshell web UI starting on %s\n", addr)
-	for i, f := range files {
-		fmt.Printf("  [%d] %s (%d pages)\n", i, f.Filename, f.TotalPages)
-	}
-	log.Fatal(http.ListenAndServe(addr, mux))
-}
-
-func handleFileInfo(w http.ResponseWriter, r *http.Request, filename string, totalPages int) {
-	fileType := "unknown"
-	pages := make([]PageSummary, 0, totalPages)
-
-	for i := 0; i < totalPages; i++ {
-		pg, err := ReadPage(filename, i)
-		if err != nil {
-			pages = append(pages, PageSummary{PageNum: i, Type: "error"})
-			continue
-		}
-		if i == 0 {
-			fileType = pg.Detected.String()
-		}
-		h := &pg.Header
-		numItems := 0
-		if h.Lower > PageHeaderSize {
-			numItems = int(h.Lower-PageHeaderSize) / ItemIdSize
-		}
-		freeSpace := 0
-		if h.Upper > h.Lower {
-			freeSpace = int(h.Upper - h.Lower)
-		}
-		pages = append(pages, PageSummary{
-			PageNum:     i,
-			Type:        pg.Detected.String(),
-			NumItems:    numItems,
-			FreeSpace:   freeSpace,
-			SpecialSize: pg.SpecialSize(),
-		})
-	}
-
-	info := FileInfo{
-		Filename:   filename,
-		TotalPages: totalPages,
-		FileType:   fileType,
-		Pages:      pages,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(info)
-}
-
-func handlePageDetail(w http.ResponseWriter, r *http.Request, filename string, totalPages int, pageStr string) {
-	pageNum, err := strconv.Atoi(pageStr)
-	if err != nil || pageNum < 0 || pageNum >= totalPages {
-		http.Error(w, "invalid page number", http.StatusBadRequest)
-		return
-	}
-
-	page, err := ReadPage(filename, pageNum)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	detail := buildPageDetail(page)
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(detail)
 }
 
 func buildPageDetail(p *Page) PageDetail {
@@ -222,7 +79,6 @@ func buildPageDetail(p *Page) PageDetail {
 	tupleEnd := int(h.Special)
 	specialEnd := pageSize
 
-	// Build regions
 	regions := []PageRegion{}
 
 	regions = append(regions, PageRegion{
@@ -280,7 +136,6 @@ func buildPageDetail(p *Page) PageDetail {
 		})
 	}
 
-	// Header info
 	headerMap := map[string]string{
 		"pd_lsn":              fmt.Sprintf("%X/%08X", h.LSN>>32, h.LSN&0xFFFFFFFF),
 		"pd_checksum":         fmt.Sprintf("0x%04X", h.Checksum),
@@ -292,7 +147,6 @@ func buildPageDetail(p *Page) PageDetail {
 		"pd_prune_xid":        fmt.Sprintf("%d", h.PruneXID),
 	}
 
-	// Line pointers
 	linePointers := make([]LinePointerInfo, len(p.Items))
 	for i, lp := range p.Items {
 		linePointers[i] = LinePointerInfo{
@@ -303,11 +157,8 @@ func buildPageDetail(p *Page) PageDetail {
 		}
 	}
 
-	// Tuples
 	isIndex := p.Detected != PageTypeHeap && p.Detected != PageTypeUnknown
 	tuples := buildTupleInfos(p, isIndex)
-
-	// Special info
 	specialInfo := buildSpecialInfo(p)
 
 	return PageDetail{
@@ -383,7 +234,6 @@ func buildTupleInfos(p *Page, isIndex bool) []TupleInfo {
 			if flags := t.Infomask2Flags(); len(flags) > 0 {
 				ti.Properties["infomask2_flags"] = strings.Join(flags, " | ")
 			}
-			// Extract printable strings from user data
 			dataStart := int(lp.Offset()) + int(t.Hoff)
 			dataEnd := int(lp.Offset()) + int(lp.Length())
 			if dataEnd > PageSize {
@@ -412,7 +262,6 @@ func buildSpecialInfo(p *Page) map[string]string {
 		"size": fmt.Sprintf("%d bytes", p.SpecialSize()),
 	}
 
-	// We reuse the existing decode logic by capturing key fields
 	switch p.Detected {
 	case PageTypeBTree:
 		if len(special) >= BTreeOpaqueSize {

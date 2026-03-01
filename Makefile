@@ -1,12 +1,12 @@
-.PHONY: all build generate clean
+.PHONY: all build frontend clean
 
 all: build
 
-generate:
-	go generate ./...
+frontend:
+	cd frontend && pnpm install && pnpm run build
 
-build: generate
+build: frontend
 	go build -o pgpageshell .
 
 clean:
-	rm -rf pgpageshell web/dist
+	rm -rf pgpageshell frontend/dist

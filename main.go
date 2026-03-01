@@ -1,6 +1,7 @@
 package main
 
 import (
+	"embed"
 	"fmt"
 	"io"
 	"os"
@@ -8,55 +9,55 @@ import (
 	"strings"
 
 	"github.com/chzyer/readline"
+	"github.com/wailsapp/wails/v2"
+	"github.com/wailsapp/wails/v2/pkg/options"
+	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 )
 
-func main() {
-	if len(os.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "Usage: pgpageshell [--web [addr]] <postgres-data-file> [file2 ...]\n")
-		fmt.Fprintf(os.Stderr, "  Inspect PostgreSQL heap/index data files page by page.\n")
-		fmt.Fprintf(os.Stderr, "\nOptions:\n")
-		fmt.Fprintf(os.Stderr, "  --web [addr]  Start web UI instead of shell (default: :8080)\n")
-		fmt.Fprintf(os.Stderr, "                Multiple files can be passed in web mode.\n")
-		os.Exit(1)
-	}
+//go:embed frontend/dist
+var assets embed.FS
 
-	webMode := false
-	webAddr := ":8080"
+func main() {
+	shellMode := false
 	var filenames []string
 
 	args := os.Args[1:]
 	for i := 0; i < len(args); i++ {
-		if args[i] == "--web" {
-			webMode = true
-			if i+1 < len(args) && strings.Contains(args[i+1], ":") {
-				webAddr = args[i+1]
-				i++
-			}
+		if args[i] == "--shell" {
+			shellMode = true
 		} else {
 			filenames = append(filenames, args[i])
 		}
 	}
 
-	if len(filenames) == 0 {
-		fmt.Fprintf(os.Stderr, "Error: no data file specified\n")
+	if shellMode && len(filenames) == 0 {
+		fmt.Fprintf(os.Stderr, "Usage: pgpageshell --shell <postgres-data-file>\n")
 		os.Exit(1)
 	}
 
-	if webMode {
-		files := make([]WebFile, 0, len(filenames))
-		for _, fn := range filenames {
-			fi, err := os.Stat(fn)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-				os.Exit(1)
-			}
-			totalPages := int(fi.Size() / PageSize)
-			if fi.Size()%PageSize != 0 {
-				fmt.Fprintf(os.Stderr, "Warning: %s size %d is not a multiple of %d\n", fn, fi.Size(), PageSize)
-			}
-			files = append(files, WebFile{Filename: fn, TotalPages: totalPages})
+	if !shellMode {
+		app, err := NewApp(filenames)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
 		}
-		StartWebServer(files, webAddr)
+
+		err = wails.Run(&options.App{
+			Title:  "pgpageshell",
+			Width:  1280,
+			Height: 900,
+			AssetServer: &assetserver.Options{
+				Assets: assets,
+			},
+			OnStartup: app.startup,
+			Bind: []interface{}{
+				app,
+			},
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
 		return
 	}
 

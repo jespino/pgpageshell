@@ -1,0 +1,12 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "pgpageshell",
+  "outputfilename": "pgpageshell",
+  "frontend:install": "cd frontend && pnpm install",
+  "frontend:build": "cd frontend && pnpm run build",
+  "frontend:dev:watcher": "cd frontend && pnpm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "author": {
+    "name": "jespino"
+  }
+}
