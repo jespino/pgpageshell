@@ -5,8 +5,8 @@ pgpageshell
 *.out
 
 # Frontend
-web/node_modules/
-web/dist/
+frontend/node_modules/
+frontend/dist/
 .pnpm-store/
 
 # Editor / OS

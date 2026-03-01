@@ -59,6 +59,29 @@ body {
   box-shadow: 0 0 0 1px #58a6ff;
 }
 
+.topbar-btn {
+  font-family: inherit;
+  font-size: 11px;
+  background: #21262d;
+  color: #c9d1d9;
+  border: 1px solid #30363d;
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.topbar-btn:hover {
+  background: #30363d;
+  border-color: #58a6ff;
+}
+
+.topbar-btn-danger:hover {
+  background: #3d1f28;
+  border-color: #f85149;
+  color: #f85149;
+}
+
 .main-content {
   display: flex;
   flex: 1;
@@ -281,4 +304,52 @@ body {
   height: 100%;
   color: #8b949e;
   font-size: 14px;
+}
+
+.welcome {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.welcome-content {
+  text-align: center;
+  max-width: 420px;
+}
+
+.welcome-title {
+  font-size: 32px;
+  color: #58a6ff;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.welcome-subtitle {
+  font-size: 14px;
+  color: #8b949e;
+  margin-bottom: 24px;
+}
+
+.welcome-desc {
+  font-size: 13px;
+  color: #6e7681;
+  line-height: 1.6;
+  margin-bottom: 32px;
+}
+
+.welcome-btn {
+  font-family: inherit;
+  font-size: 14px;
+  background: #238636;
+  color: #fff;
+  border: 1px solid #2ea043;
+  border-radius: 6px;
+  padding: 10px 32px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.welcome-btn:hover {
+  background: #2ea043;
 }
