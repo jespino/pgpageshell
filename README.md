@@ -17,7 +17,7 @@ query.
 
 <div align="center">
   <a href="https://leanpub.com/deep-dive-into-a-sql-query">
-    <img src="cover.png" alt="Deep dive into a SQL query" width="300">
+    <img src="cover.webp" alt="Deep dive into a SQL query" width="300">
   </a>
 </div>
 
@@ -98,7 +98,7 @@ You can open additional files or close existing ones from the toolbar at any
 time.
 
 <div align="center">
-  <img src="screenshot.png" alt="pgpageshell screenshot" width="800">
+  <img src="screenshot.webp" alt="pgpageshell screenshot" width="800">
 </div>
 
 You can find the file path for a table or index with:
