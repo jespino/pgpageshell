@@ -1,22 +1,16 @@
 version: 2
 
-before:
-  hooks:
-    - cmd: sh -c "cd frontend && pnpm install --frozen-lockfile && pnpm run build"
-
 builds:
   - id: pgpageshell
     binary: pgpageshell
-    tags: "{{ .Env.BUILD_TAGS }}"
     ldflags:
       - -s -w
     env:
       - CGO_ENABLED=1
-      - CGO_LDFLAGS={{ .Env.CGO_LDFLAGS }}
     goos:
-      - "{{ .Env.GOOS }}"
+      - linux
     goarch:
-      - "{{ .Env.GOARCH }}"
+      - amd64
 
 archives:
   - id: pgpageshell
@@ -42,7 +36,7 @@ nfpms:
       - rpm
 
 checksum:
-  disable: true
+  name_template: "checksums.txt"
 
 changelog:
   sort: asc

@@ -18,6 +18,7 @@ jobs:
             goarch: amd64
             build_tags: "production webkit2_41"
             cgo_ldflags: ""
+            binary: pgpageshell
             setup: |
               sudo apt-get update -qq
               sudo apt-get install -y -qq pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev
@@ -26,6 +27,7 @@ jobs:
             goarch: arm64
             build_tags: "production webkit2_41"
             cgo_ldflags: ""
+            binary: pgpageshell
             setup: |
               sudo apt-get update -qq
               sudo apt-get install -y -qq pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev
@@ -34,12 +36,11 @@ jobs:
             goarch: amd64
             build_tags: production
             cgo_ldflags: ""
+            binary: pgpageshell.exe
             setup: ""
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - uses: actions/setup-go@v5
         with:
@@ -57,24 +58,22 @@ jobs:
         if: matrix.setup != ''
         run: ${{ matrix.setup }}
 
-      - uses: goreleaser/goreleaser-action@v6
-        with:
-          version: "~> v2"
-          args: release --clean --split
+      - name: Build frontend
+        run: cd frontend && pnpm install --frozen-lockfile && pnpm run build
+
+      - name: Build binary
+        run: go build -tags "${{ matrix.build_tags }}" -ldflags "-s -w" -o ${{ matrix.binary }} .
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-          BUILD_TAGS: ${{ matrix.build_tags }}
+          CGO_ENABLED: "1"
           CGO_LDFLAGS: ${{ matrix.cgo_ldflags }}
 
       - uses: actions/upload-artifact@v4
         with:
-          name: artifacts-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: dist/**/*
+          name: binary-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: ${{ matrix.binary }}
           retention-days: 1
 
-  publish:
+  release:
     needs: build
     runs-on: ubuntu-latest
     steps:
@@ -84,13 +83,75 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          pattern: artifacts-*
-          path: dist
-          merge-multiple: true
+          name: binary-linux-amd64
+          path: build/linux-amd64
 
-      - uses: goreleaser/goreleaser-action@v6
+      - uses: actions/download-artifact@v4
         with:
-          version: "~> v2"
-          args: continue --merge
+          name: binary-linux-arm64
+          path: build/linux-arm64
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: binary-windows-amd64
+          path: build/windows-amd64
+
+      - name: Build frontend (for nfpm)
+        run: |
+          corepack enable
+          cd frontend && pnpm install --frozen-lockfile && pnpm run build
+
+      - name: Package archives
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          mkdir -p dist
+
+          # Linux amd64
+          tar czf dist/pgpageshell_${VERSION}_linux_amd64.tar.gz -C build/linux-amd64 pgpageshell
+          # Linux arm64
+          tar czf dist/pgpageshell_${VERSION}_linux_arm64.tar.gz -C build/linux-arm64 pgpageshell
+          # Windows amd64
+          (cd build/windows-amd64 && zip ../../dist/pgpageshell_${VERSION}_windows_amd64.zip pgpageshell.exe)
+
+      - name: Build deb and rpm packages
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq rpm
+          VERSION=${GITHUB_REF_NAME#v}
+
+          # Install nfpm
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+
+          # Create nfpm config
+          cat > nfpm.yaml <<EOF
+          name: pgpageshell
+          arch: amd64
+          version: ${VERSION}
+          maintainer: "Jesús Espino <jespinog@gmail.com>"
+          description: Desktop application for inspecting PostgreSQL data files at the page level.
+          vendor: jespino
+          homepage: https://github.com/jespino/pgpageshell
+          license: MIT
+          contents:
+            - src: build/linux-amd64/pgpageshell
+              dst: /usr/bin/pgpageshell
+          EOF
+
+          $(go env GOPATH)/bin/nfpm package -p deb -t dist/pgpageshell_${VERSION}_amd64.deb
+          $(go env GOPATH)/bin/nfpm package -p rpm -t dist/pgpageshell_${VERSION}_amd64.rpm
+
+          # arm64 packages
+          sed -i 's/arch: amd64/arch: arm64/' nfpm.yaml
+          sed -i 's/linux-amd64/linux-arm64/' nfpm.yaml
+          $(go env GOPATH)/bin/nfpm package -p deb -t dist/pgpageshell_${VERSION}_arm64.deb
+          $(go env GOPATH)/bin/nfpm package -p rpm -t dist/pgpageshell_${VERSION}_arm64.rpm
+
+      - name: Generate checksums
+        run: cd dist && sha256sum * > checksums.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
