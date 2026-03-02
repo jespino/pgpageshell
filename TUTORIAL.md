@@ -107,7 +107,7 @@ the command line or use the "Open File" button from the welcome screen:
 ./pgpageshell pgdata/base/16384/17543
 ```
 
-![Opening a file in pgpageshell](screenshots/tutorial-open-file.png)
+![Opening a file in pgpageshell](screenshots/tutorial-open-file.webp)
 
 The sidebar on the left lists all pages in the file. The main area shows the
 page grid — a 32×64 grid where each cell represents 4 bytes of the page.
@@ -124,7 +124,7 @@ The grid is color-coded by region:
 - **Green** — Tuples (heap rows or index entries)
 - **Orange** — Special region (index-specific metadata at the end of the page)
 
-![Page grid color legend](screenshots/tutorial-page-grid.png)
+![Page grid color legend](screenshots/tutorial-page-grid.webp)
 
 Each cell is 4 bytes, and the grid reads left-to-right, top-to-bottom — just
 like reading a hex dump. The entire 8192-byte page maps to 2048 cells arranged
@@ -136,14 +136,14 @@ in a 32×64 grid.
 
 Select page 0 of the actor table. This is a heap page holding actor rows.
 
-![Heap page overview](screenshots/tutorial-heap-page.png)
+![Heap page overview](screenshots/tutorial-heap-page.webp)
 
 ### 4.1 Page Header
 
 Click on any blue cell in the first row. The detail panel in the sidebar shows
 the page header fields:
 
-![Page header detail](screenshots/tutorial-heap-header.png)
+![Page header detail](screenshots/tutorial-heap-header.webp)
 
 Key fields:
 
@@ -159,15 +159,15 @@ gray cells in the grid.
 
 ### 4.2 Line Pointers and Tuples
 
-Hover over a purple cell (line pointer). Notice how the corresponding green
+Hover over a purple green (line pointer). Notice how the corresponding purple 
 cells (the tuple it points to) light up simultaneously. This cross-highlighting
 shows the connection between a line pointer and its tuple.
 
-![Cross-highlighting between line pointer and tuple](screenshots/tutorial-heap-cross-highlight.png)
+![Cross-highlighting between line pointer and tuple](screenshots/tutorial-heap-cross-highlight.webp)
 
 Click on a tuple in the items panel on the right to see its details:
 
-![Tuple detail showing MVCC fields](screenshots/tutorial-heap-tuple-detail.png)
+![Tuple detail showing MVCC fields](screenshots/tutorial-heap-tuple-detail.webp)
 
 Each heap tuple has a header with MVCC metadata:
 
@@ -188,7 +188,7 @@ pointers), with only a thin strip of gray in between.
 Now click on page 1 in the sidebar. This page has fewer tuples and more free
 space — you can see the difference immediately in the grid.
 
-![Comparing a full page vs a partially full page](screenshots/tutorial-heap-page-comparison.png)
+![Comparing a full page vs a partially full page](screenshots/tutorial-heap-page-comparison.webp)
 
 ---
 
@@ -200,7 +200,7 @@ Open the `actor_pkey` file (the B-tree primary key index on `actor_id`).
 
 Every B-tree starts with a meta page. Select page 0.
 
-![B-tree meta page](screenshots/tutorial-btree-meta.png)
+![B-tree meta page](screenshots/tutorial-btree-meta.webp)
 
 The orange cells at the bottom are the special region. Click on them to see
 the B-tree meta data:
@@ -213,7 +213,7 @@ the B-tree meta data:
 
 Select page 1 (the root/leaf page). Compare it to the heap page:
 
-![B-tree leaf page](screenshots/tutorial-btree-leaf.png)
+![B-tree leaf page](screenshots/tutorial-btree-leaf.webp)
 
 Key differences:
 
@@ -228,7 +228,7 @@ Key differences:
 
 Click on an index tuple to see its detail:
 
-![B-tree index tuple detail](screenshots/tutorial-btree-tuple-detail.png)
+![B-tree index tuple detail](screenshots/tutorial-btree-tuple-detail.webp)
 
 The `t_tid` field (e.g., `(0, 1)`) is the pointer back to the heap — "page 0,
 line pointer 1" in the actor table.
@@ -241,7 +241,7 @@ Open the `idx_hash_customer_email` file.
 
 ### 6.1 Meta Page
 
-![Hash meta page](screenshots/tutorial-hash-meta.png)
+![Hash meta page](screenshots/tutorial-hash-meta.webp)
 
 The hash meta page stores:
 
@@ -253,7 +253,7 @@ The hash meta page stores:
 
 Navigate to a bucket page (look for pages with type "hash" in the sidebar).
 
-![Hash bucket page](screenshots/tutorial-hash-bucket.png)
+![Hash bucket page](screenshots/tutorial-hash-bucket.webp)
 
 Hash pages have four types visible in the special region flags:
 `LH_META_PAGE`, `LH_BUCKET_PAGE`, `LH_OVERFLOW_PAGE`, and `LH_BITMAP_PAGE`.
@@ -265,7 +265,7 @@ The magic number `0xFF80` in `hasho_page_id` identifies hash pages.
 
 Open the `film_fulltext_idx` file (GiST index on the film full-text column).
 
-![GiST page](screenshots/tutorial-gist-page.png)
+![GiST page](screenshots/tutorial-gist-page.webp)
 
 GiST-specific fields in the special region:
 
@@ -288,7 +288,7 @@ Open the `idx_gin_film_fulltext` file.
 
 ### 8.1 Meta Page
 
-![GIN meta page](screenshots/tutorial-gin-meta.png)
+![GIN meta page](screenshots/tutorial-gin-meta.webp)
 
 The GIN meta page reveals the index structure:
 
@@ -306,7 +306,7 @@ Navigate to an entry page. GIN has a two-level structure:
 1. An **entry tree** — a B-tree of keys (lexemes).
 2. For each key, a **posting list** or **posting tree** of heap TIDs.
 
-![GIN entry page](screenshots/tutorial-gin-entry.png)
+![GIN entry page](screenshots/tutorial-gin-entry.webp)
 
 The `GIN_LEAF`, `GIN_DATA`, and `GIN_COMPRESSED` flags in the special region
 tell you what kind of GIN page you're looking at.
@@ -319,7 +319,7 @@ Open the `idx_brin_rental_id` file. BRIN is the most space-efficient index
 type — instead of indexing individual rows, it stores summary information for
 ranges of consecutive heap pages.
 
-![BRIN meta page](screenshots/tutorial-brin-meta.png)
+![BRIN meta page](screenshots/tutorial-brin-meta.webp)
 
 The meta page shows:
 
@@ -338,7 +338,7 @@ With `pagesPerRange = 128`, each BRIN entry covers about 1 MB of table data.
 The entire BRIN index for the rental table fits in just 3 pages (24 KB) —
 compare that to a B-tree on the same column which would need dozens of pages.
 
-![BRIN regular page](screenshots/tutorial-brin-regular.png)
+![BRIN regular page](screenshots/tutorial-brin-regular.webp)
 
 ---
 
