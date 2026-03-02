@@ -27,6 +27,13 @@ a book that follows a SQL statement through every stage of PostgreSQL's
 internal pipeline — from parsing to execution — and explains how data is
 organized on disk along the way.
 
+## Further Reading
+
+For background on how PostgreSQL organizes data on disk — slotted pages,
+heap tuples, and the different index access methods — see
+[**PostgreSQL Indexes**](https://internals-for-interns.com/posts/postgres-indexes/)
+on *Internals for Interns*.
+
 ## Tutorial
 
 See [**TUTORIAL.md**](TUTORIAL.md) for a hands-on walkthrough that uses the
