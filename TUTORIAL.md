@@ -1,8 +1,9 @@
-# Tutorial: Exploring PostgreSQL Pages on Disk
+# Tutorial: Exploring PostgreSQL Pages with pgpageshell
 
 This tutorial walks you through how PostgreSQL stores data on disk at the page
 level. You will set up a PostgreSQL instance with the Pagila sample database,
-create different index types, and use `pgpageshell` to inspect the raw pages.
+create different index types, and use pgpageshell's GUI to visually inspect
+the raw pages.
 
 By the end you will understand:
 
@@ -88,32 +89,8 @@ WHERE c.relnamespace = 'public'::regnamespace
 ORDER BY am.amname;
 ```
 
-```
-         relname         | amname |     filepath
--------------------------+--------+------------------
- idx_brin_rental_id      | brin   | base/16384/17985
- actor_pkey              | btree  | base/16384/17726
- idx_gin_film_fulltext   | gin    | base/16384/17984
- film_fulltext_idx       | gist   | base/16384/17754
- idx_hash_customer_email | hash   | base/16384/17983
- actor                   | heap   | base/16384/17543
-```
-
 The actual OIDs will differ on your system. The files live under
 `pgdata/base/<database_oid>/`.
-
-### 1.5 Build pgpageshell
-
-```bash
-cd pgpageshell
-go build -o pgpageshell .
-```
-
-Now you can point it at any of those files. For example:
-
-```bash
-./pgpageshell pgdata/base/16384/17543
-```
 
 > **Note**: If PostgreSQL is running, the files are still readable. PostgreSQL
 > uses shared buffers and does not hold exclusive locks on the data files. You
@@ -121,517 +98,271 @@ Now you can point it at any of those files. For example:
 
 ---
 
-## 2. The PostgreSQL Page: General Structure
+## 2. Opening Files in pgpageshell
 
-Every data file in PostgreSQL is divided into **pages** (also called blocks),
-each exactly **8192 bytes** (8 KB) by default. Whether it's a heap table, a
-B-tree index, or a GIN index, every page shares the same basic skeleton:
+Launch pgpageshell and open the actor table file. You can either pass it on
+the command line or use the "Open File" button from the welcome screen:
 
-```
-+--------------------------------------------------------------+
-| Page Header (24 bytes)                                       |
-+--------------------------------------------------------------+
-| Line Pointers (ItemId array, 4 bytes each)                   |
-+--------------------------------------------------------------+
-| Free Space                                                   |
-+--------------------------------------------------------------+
-| Tuples (grow downward from the end of the page)              |
-+--------------------------------------------------------------+
-| Special Space (index-specific, at the very end)              |
-+--------------------------------------------------------------+
+```bash
+./pgpageshell pgdata/base/16384/17543
 ```
 
-Key points:
+![Opening a file in pgpageshell](screenshots/tutorial-open-file.png)
 
-- **Line pointers** grow forward (low to high addresses).
-- **Tuples** grow backward (high to low addresses).
-- **Free space** is the gap between them.
-- **Special space** is fixed at the end of the page and is used by index
-  access methods to store per-page metadata. Heap pages have no special space.
-
-The page header tracks where each region starts and ends through the fields
-`pd_lower` (end of line pointers), `pd_upper` (start of tuples), and
-`pd_special` (start of special space).
+The sidebar on the left lists all pages in the file. The main area shows the
+page grid — a 32×64 grid where each cell represents 4 bytes of the page.
 
 ---
 
-## 3. Heap Pages (Tables)
+## 3. Understanding the Page Grid
 
-Let's inspect the `actor` table. It has 200 rows across 2 pages.
+The grid is color-coded by region:
 
-### 3.1 Page Layout
+- **Blue** — Page header (24 bytes, the first 6 cells)
+- **Purple** — Line pointers (4 bytes each, one cell per pointer)
+- **Gray** — Free space
+- **Green** — Tuples (heap rows or index entries)
+- **Orange** — Special region (index-specific metadata at the end of the page)
 
-```
-pgpageshell(page 0)> format
+![Page grid color legend](screenshots/tutorial-page-grid.png)
 
-  Page Layout (page size: 8192, type: heap)
-  Offset 0x0000 - 0x1fff
-
-+--------------------------------------------------------------+
-| Page Header (PageHeaderData)   [    0 -    23]    24 bytes   |
-+--------------------------------------------------------------+
-| Line Pointers (142 items)      [   24 -   591]   568 bytes   |
-+--------------------------------------------------------------+
-| Free Space                     [  592 -   623]    32 bytes   |
-+--------------------------------------------------------------+
-| Heap Tuples                    [  624 -  8191]  7568 bytes   |
-+--------------------------------------------------------------+
-
-  Proportional view:
-  [HHLLLLL.TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT]
-   H=Header  L=LinePointers  .=Free  T=Tuples  S=Special
-```
-
-This page holds 142 actor rows. The page is nearly full (only 32 bytes free).
-Notice there is no Special Space — heap pages use the full 8192 bytes for
-header + line pointers + tuples.
-
-### 3.2 Page Header
-
-```
-pgpageshell(page 0)> info
-
-=== Page Header (detected type: heap) ===
-  pd_lsn             : 0/01F08DB0
-  pd_checksum        : 0x0000 (0)
-  pd_flags           : 0x0000 [none]
-  pd_lower           : 592 (0x0250)
-  pd_upper           : 624 (0x0270)
-  pd_special         : 8192 (0x2000)
-  pd_pagesize_version: 0x2004 (size: 8192, version: 4)
-  pd_prune_xid       : 0
-```
-
-Field by field:
-
-| Field | Value | Meaning |
-|-------|-------|---------|
-| `pd_lsn` | `0/01F08DB0` | WAL position of the last change to this page. Used for crash recovery. |
-| `pd_checksum` | `0x0000` | Page checksum (disabled by default). |
-| `pd_flags` | `0x0000` | No flags set. Could be `HAS_FREE_LINES`, `PAGE_FULL`, or `ALL_VISIBLE`. |
-| `pd_lower` | `592` | Byte offset where line pointers end. (24 header + 142×4 = 592) |
-| `pd_upper` | `624` | Byte offset where tuple data starts. |
-| `pd_special` | `8192` | Equal to page size → no special space (heap page). |
-| `pd_pagesize_version` | `0x2004` | Page size 8192 (0x2000) + layout version 4. |
-| `pd_prune_xid` | `0` | Oldest xmax on the page that might be reclaimable. |
-
-### 3.3 Line Pointers and Tuples
-
-Each line pointer is a 4-byte entry that stores the offset and length of a
-tuple within the page, plus a 2-bit status flag:
-
-| Flag | Meaning |
-|------|---------|
-| `NORMAL` | Points to a live tuple. |
-| `REDIRECT` | HOT chain redirect — points to another line pointer, not a tuple. |
-| `DEAD` | Tuple has been removed but the slot hasn't been reclaimed yet. |
-| `UNUSED` | Slot is free and can be reused. |
-
-Let's look at the actual tuples:
-
-```
-pgpageshell(page 0)> data
-
-=== Heap Tuples ===
-
---- Tuple 1 (offset 8136, length 56) ---
-  Tuple Header (HeapTupleHeaderData):
-    t_xmin       : 969
-    t_xmax       : 978
-    t_cid        : 0
-    t_ctid       : (0, 1)
-    t_infomask2  : 0x0004 (natts: 4)
-    t_infomask   : 0x0192 [HAS_VARWIDTH | XMAX_KEYSHR_LOCK | XMAX_LOCK_ONLY | XMIN_COMMITTED]
-    t_hoff       : 24
-    User data (32 bytes at offset 8160):
-      00001fe0: 01 00 00 00 13 50 45 4e  45 4c 4f 50 45 11 47 55  |.....PENELOPE.GU|
-      00001ff0: 49 4e 45 53 53 00 00 00  40 9c 5d 02 0a 7b 02 00  |INESS...@.]..{..|
-    Printable strings:
-      "PENELOPE"
-      "GUINESS"
-
---- Tuple 2 (offset 8080, length 56) ---
-  Tuple Header (HeapTupleHeaderData):
-    t_xmin       : 969
-    t_xmax       : 978
-    t_cid        : 0
-    t_ctid       : (0, 2)
-    t_infomask2  : 0x0004 (natts: 4)
-    t_infomask   : 0x0192 [HAS_VARWIDTH | XMAX_KEYSHR_LOCK | XMAX_LOCK_ONLY | XMIN_COMMITTED]
-    t_hoff       : 24
-    User data (32 bytes at offset 8104):
-      00001fa8: 02 00 00 00 0b 4e 49 43  4b 13 57 41 48 4c 42 45  |.....NICK.WAHLBE|
-      00001fb8: 52 47 00 00 00 00 00 00  40 9c 5d 02 0a 7b 02 00  |RG......@.]..{..|
-    Printable strings:
-      "NICK"
-      "WAHLBERG"
-```
-
-This is actor #1 (PENELOPE GUINESS) and actor #2 (NICK WAHLBERG). Let's break
-down what we see:
-
-**Tuple header (23 bytes, padded to `t_hoff` = 24):**
-
-| Field | Value | Meaning |
-|-------|-------|---------|
-| `t_xmin` | `969` | Transaction ID that inserted this row. |
-| `t_xmax` | `978` | Transaction that last locked/modified this row. |
-| `t_cid` | `0` | Command ID within the transaction. |
-| `t_ctid` | `(0, 1)` | Physical location: page 0, line pointer 1. Points to itself for live tuples. |
-| `t_infomask2` | `natts: 4` | The `actor` table has 4 columns (actor_id, first_name, last_name, last_update). |
-| `t_infomask` | see flags | MVCC visibility flags. `XMIN_COMMITTED` means the inserting transaction committed. |
-| `t_hoff` | `24` | User data starts 24 bytes after the tuple start. |
-
-**User data:**
-
-The raw bytes after the header contain the column values. For the actor table:
-- `01 00 00 00` → actor_id = 1 (int4, little-endian)
-- `13 50 45 4e 45 4c 4f 50 45` → varlena header (0x13 = 19 bytes total) + "PENELOPE"
-- `11 47 55 49 4e 45 53 53` → varlena header (0x11 = 17 bytes total) + "GUINESS"
-- The remaining bytes are the `last_update` timestamp.
-
-Notice how tuples grow **downward**: tuple 1 is at offset 8136 (near the end
-of the page), tuple 2 is at 8080, and so on. The line pointers at the top of
-the page point into these locations.
-
-### 3.4 MVCC in Action
-
-The `t_infomask` flags encode the MVCC state of each tuple. Common flags you
-will see:
-
-| Flag | Meaning |
-|------|---------|
-| `XMIN_COMMITTED` | The inserting transaction has committed — this tuple is visible. |
-| `XMIN_INVALID` | The inserting transaction aborted — this tuple is dead. |
-| `XMIN_FROZEN` | The xmin has been frozen by VACUUM — visible to all transactions. |
-| `XMAX_INVALID` | No valid deleting/locking transaction — tuple is live. |
-| `XMAX_COMMITTED` | The deleting transaction committed — tuple is dead. |
-| `HOT_UPDATED` | This tuple has been updated via a Heap-Only Tuple (HOT) update. |
-| `HEAP_ONLY` | This tuple is the result of a HOT update (not indexed). |
-
-When you UPDATE a row, PostgreSQL creates a new tuple version. The old tuple's
-`t_ctid` points to the new version, and the `HOT_UPDATED` flag is set. After
-VACUUM, old versions are removed and their line pointers become `REDIRECT` or
-`UNUSED`.
+Each cell is 4 bytes, and the grid reads left-to-right, top-to-bottom — just
+like reading a hex dump. The entire 8192-byte page maps to 2048 cells arranged
+in a 32×64 grid.
 
 ---
 
-## 4. B-tree Index Pages
+## 4. Heap Pages (Tables)
 
-B-tree is the default index type. Let's look at `actor_pkey` (primary key on
-`actor_id`).
+Select page 0 of the actor table. This is a heap page holding actor rows.
 
-### 4.1 Meta Page (Page 0)
+![Heap page overview](screenshots/tutorial-heap-page.png)
 
-Every B-tree index starts with a meta page at page 0:
+### 4.1 Page Header
 
-```
-pgpageshell(page 0)> info
+Click on any blue cell in the first row. The detail panel in the sidebar shows
+the page header fields:
 
-=== Special Region ===
-  Size: 16 bytes at offset 8176
+![Page header detail](screenshots/tutorial-heap-header.png)
 
-  B-tree Page Opaque Data (BTPageOpaqueData):
-    btpo_prev    : 0
-    btpo_next    : 0
-    btpo_level   : 0 (leaf)
-    btpo_flags   : 0x0008 [BTP_META]
-    btpo_cycleid : 0
+Key fields:
 
-  B-tree Meta Page Data (BTMetaPageData):
-    btm_magic          : 0x053162 (valid)
-    btm_version        : 4
-    btm_root           : 1
-    btm_level          : 0
-    btm_fastroot       : 1
-    btm_fastlevel      : 0
-```
+| Field | Meaning |
+|-------|---------|
+| `pd_lsn` | WAL position of the last change to this page. Used for crash recovery. |
+| `pd_lower` | Byte offset where line pointers end. |
+| `pd_upper` | Byte offset where tuple data starts. |
+| `pd_special` | Start of special space. Equal to 8192 for heap pages (no special region). |
 
-The meta page tells us:
-- `btm_root = 1`: The root page is page 1.
-- `btm_level = 0`: The tree has only one level (root is also a leaf). With
-  only 200 actors, everything fits in a single leaf page.
+The gap between `pd_lower` and `pd_upper` is the free space — visible as the
+gray cells in the grid.
 
-### 4.2 Leaf Page (Page 1)
+### 4.2 Line Pointers and Tuples
 
-```
-pgpageshell(page 1)> format
+Hover over a purple cell (line pointer). Notice how the corresponding green
+cells (the tuple it points to) light up simultaneously. This cross-highlighting
+shows the connection between a line pointer and its tuple.
 
-  Page Layout (page size: 8192, type: btree)
-  Offset 0x0000 - 0x1fff
+![Cross-highlighting between line pointer and tuple](screenshots/tutorial-heap-cross-highlight.png)
 
-+--------------------------------------------------------------+
-| Page Header (PageHeaderData)   [    0 -    23]    24 bytes   |
-+--------------------------------------------------------------+
-| Line Pointers (200 items)      [   24 -   823]   800 bytes   |
-+--------------------------------------------------------------+
-| Free Space                     [  824 -  4975]  4152 bytes   |
-+--------------------------------------------------------------+
-| Index Tuples (btree)           [ 4976 -  8175]  3200 bytes   |
-+--------------------------------------------------------------+
-| Special Space (btree)          [ 8176 -  8191]    16 bytes   |
-+--------------------------------------------------------------+
-```
+Click on a tuple in the items panel on the right to see its details:
 
-Key differences from a heap page:
+![Tuple detail showing MVCC fields](screenshots/tutorial-heap-tuple-detail.png)
 
-1. **Special space (16 bytes)** at the end contains `BTPageOpaqueData` with
-   sibling pointers and tree level.
-2. **Index tuples** are much smaller than heap tuples — they only contain the
-   indexed key and a pointer (TID) back to the heap.
+Each heap tuple has a header with MVCC metadata:
 
-```
-pgpageshell(page 1)> info
+| Field | Meaning |
+|-------|---------|
+| `t_xmin` | Transaction ID that inserted this row. |
+| `t_xmax` | Transaction that deleted or locked this row. |
+| `t_ctid` | Physical location (page, line pointer). Points to itself for live tuples, or to the next version in an update chain. |
+| `t_infomask` | Visibility flags: `XMIN_COMMITTED`, `XMAX_INVALID`, `HOT_UPDATED`, etc. |
+| `t_hoff` | Offset where user data starts within the tuple. |
 
-=== Special Region ===
-  B-tree Page Opaque Data (BTPageOpaqueData):
-    btpo_prev    : 0
-    btpo_next    : 0
-    btpo_level   : 0 (leaf)
-    btpo_flags   : 0x0003 [BTP_LEAF | BTP_ROOT]
-    btpo_cycleid : 0
-```
+### 4.3 Page Fullness
 
-`BTP_LEAF | BTP_ROOT` — this single page is both the root and a leaf.
+Look at how much gray (free space) is visible in the grid. Page 0 of the actor
+table is nearly full — most of the page is green (tuples) and purple (line
+pointers), with only a thin strip of gray in between.
 
-### 4.3 Index Tuples
+Now click on page 1 in the sidebar. This page has fewer tuples and more free
+space — you can see the difference immediately in the grid.
 
-```
-pgpageshell(page 1)> data
-
-=== Index Tuples (btree) ===
-
---- Item 1 (offset 8160, length 16) ---
-  Index Tuple Header (IndexTupleData):
-    t_tid        : (0, 1)  -> heap ctid
-    t_info       : 0x0010 (size: 16)
-    Key data (8 bytes):
-      00001fe8: 01 00 00 00 00 00 00 00                           |........|
-
---- Item 2 (offset 8144, length 16) ---
-  Index Tuple Header (IndexTupleData):
-    t_tid        : (0, 2)  -> heap ctid
-    t_info       : 0x0010 (size: 16)
-    Key data (8 bytes):
-      00001fd8: 02 00 00 00 00 00 00 00                           |........|
-```
-
-Each index tuple is only 16 bytes:
-- **8 bytes header**: 6 bytes for `t_tid` (block + offset pointing to the heap
-  tuple) + 2 bytes for `t_info` (tuple size and flags).
-- **8 bytes key data**: The `actor_id` value (int4 = 4 bytes) plus padding.
-
-`t_tid = (0, 1)` means "heap page 0, line pointer 1" — this is how the index
-points back to the actual row in the table.
+![Comparing a full page vs a partially full page](screenshots/tutorial-heap-page-comparison.png)
 
 ---
 
-## 5. Hash Index Pages
+## 5. B-tree Index Pages
 
-Hash indexes are optimized for equality lookups (`=`). They cannot support
-range queries or ordering.
+Open the `actor_pkey` file (the B-tree primary key index on `actor_id`).
 
-```
-pgpageshell(page 0)> info
+### 5.1 Meta Page (Page 0)
 
-=== Special Region ===
-  Hash Page Opaque Data (HashPageOpaqueData):
-    hasho_prevblkno : NONE
-    hasho_nextblkno : NONE
-    hasho_bucket    : 4294967295
-    hasho_flag      : 0x0008 [LH_META_PAGE]
-    hasho_page_id   : 0xFF80 (HASHO_PAGE_ID)
+Every B-tree starts with a meta page. Select page 0.
 
-  Hash Meta Page Data (HashMetaPageData):
-    hashm_magic      : 0x6440640 (valid)
-    hashm_version    : 4
-    hashm_ntuples    : 599.000000
-    hashm_ffactor    : 307
-    hashm_bsize      : 8152
-    hashm_maxbucket  : 1
-    hashm_highmask   : 0x00000003
-    hashm_lowmask    : 0x00000001
-```
+![B-tree meta page](screenshots/tutorial-btree-meta.png)
+
+The orange cells at the bottom are the special region. Click on them to see
+the B-tree meta data:
+
+- `btm_root`: Which page is the root of the tree.
+- `btm_level`: How many levels the tree has. With only 200 actors, the tree
+  fits in a single level (root = leaf).
+
+### 5.2 Leaf Page
+
+Select page 1 (the root/leaf page). Compare it to the heap page:
+
+![B-tree leaf page](screenshots/tutorial-btree-leaf.png)
+
+Key differences:
+
+- **Orange cells at the bottom**: The 16-byte special region contains
+  `BTPageOpaqueData` — sibling pointers (`btpo_prev`, `btpo_next`), tree
+  level, and flags like `BTP_LEAF` and `BTP_ROOT`.
+- **Smaller tuples**: Index tuples are much smaller than heap tuples. Each one
+  contains only the indexed key (`actor_id`) and a TID pointing back to the
+  heap.
+- **More free space**: The green region is smaller relative to the page size
+  because index entries are compact.
+
+Click on an index tuple to see its detail:
+
+![B-tree index tuple detail](screenshots/tutorial-btree-tuple-detail.png)
+
+The `t_tid` field (e.g., `(0, 1)`) is the pointer back to the heap — "page 0,
+line pointer 1" in the actor table.
+
+---
+
+## 6. Hash Index Pages
+
+Open the `idx_hash_customer_email` file.
+
+### 6.1 Meta Page
+
+![Hash meta page](screenshots/tutorial-hash-meta.png)
 
 The hash meta page stores:
-- `hashm_ntuples`: Total number of indexed tuples (599 customer emails).
-- `hashm_ffactor`: Fill factor — target number of tuples per bucket.
-- `hashm_maxbucket`: Highest bucket number. Buckets are split dynamically as
-  the index grows.
 
-A bucket page looks like:
+- `hashm_ntuples`: Total indexed tuples (599 customer emails).
+- `hashm_ffactor`: Target tuples per bucket.
+- `hashm_maxbucket`: Highest bucket number.
 
-```
-pgpageshell(page 2)> info
+### 6.2 Bucket Page
 
-=== Special Region ===
-  Hash Page Opaque Data (HashPageOpaqueData):
-    hasho_prevblkno : 1
-    hasho_nextblkno : NONE
-    hasho_bucket    : 1
-    hasho_flag      : 0x0002 [LH_BUCKET_PAGE]
-    hasho_page_id   : 0xFF80 (HASHO_PAGE_ID)
-```
+Navigate to a bucket page (look for pages with type "hash" in the sidebar).
 
-Hash pages have four types: `LH_META_PAGE`, `LH_BUCKET_PAGE`,
-`LH_OVERFLOW_PAGE`, and `LH_BITMAP_PAGE`. The `hasho_page_id` field
-(`0xFF80`) is a magic number that identifies the page as belonging to a hash
-index.
+![Hash bucket page](screenshots/tutorial-hash-bucket.png)
+
+Hash pages have four types visible in the special region flags:
+`LH_META_PAGE`, `LH_BUCKET_PAGE`, `LH_OVERFLOW_PAGE`, and `LH_BITMAP_PAGE`.
+The magic number `0xFF80` in `hasho_page_id` identifies hash pages.
 
 ---
 
-## 6. GiST Index Pages
+## 7. GiST Index Pages
 
-GiST (Generalized Search Tree) supports complex data types like geometric
-objects, full-text search, and ranges. Pagila uses a GiST index on the `film`
-table's `fulltext` column.
+Open the `film_fulltext_idx` file (GiST index on the film full-text column).
 
-```
-pgpageshell(page 1)> info
+![GiST page](screenshots/tutorial-gist-page.png)
 
-=== Special Region ===
-  GiST Page Opaque Data (GISTPageOpaqueData):
-    nsn          : 0/00000000
-    rightlink    : 2
-    flags        : 0x0001 [F_LEAF]
-    gist_page_id : 0xFF81 (GIST_PAGE_ID)
-```
+GiST-specific fields in the special region:
 
-GiST-specific fields:
-- `nsn` (Node Sequence Number): Used for concurrent access — tracks page
-  splits.
-- `rightlink`: Pointer to the right sibling page (page 2 in this case).
-- `flags`: `F_LEAF` means this is a leaf page. Internal pages don't have this
-  flag.
-- `gist_page_id`: Magic number `0xFF81` identifying this as a GiST page.
+| Field | Meaning |
+|-------|---------|
+| `nsn` | Node Sequence Number — tracks page splits for concurrent access. |
+| `rightlink` | Pointer to the right sibling page. |
+| `flags` | `F_LEAF` for leaf pages, absent for internal nodes. |
+| `gist_page_id` | Magic number `0xFF81`. |
 
 GiST internal nodes store bounding keys that encompass all entries in their
 subtree. Leaf nodes store the actual indexed values with TIDs pointing to heap
-tuples, just like B-tree.
+tuples.
 
 ---
 
-## 7. GIN Index Pages
+## 8. GIN Index Pages
 
-GIN (Generalized Inverted Index) is designed for values that contain multiple
-elements — arrays, full-text search vectors, JSONB. It maps each element to
-the set of rows that contain it.
+Open the `idx_gin_film_fulltext` file.
 
-```
-pgpageshell(page 0)> info
+### 8.1 Meta Page
 
-=== Special Region ===
-  GIN Page Opaque Data (GinPageOpaqueData):
-    rightlink    : NONE
-    maxoff       : 0
-    flags        : 0x0008 [GIN_META]
-
-  GIN Meta Page Data (GinMetaPageData):
-    head                : NONE
-    tail                : NONE
-    tailFreeSize        : 0
-    nPendingPages       : 0
-    nPendingHeapTuples  : 0
-    nTotalPages         : 14
-    nEntryPages         : 13
-    nDataPages          : 0
-    nEntries            : 1108
-```
+![GIN meta page](screenshots/tutorial-gin-meta.png)
 
 The GIN meta page reveals the index structure:
-- `nEntries = 1108`: The number of distinct lexemes indexed from the film
-  descriptions.
-- `nEntryPages = 13`: Pages storing the entry tree (the B-tree of keys).
-- `nDataPages = 0`: No separate posting tree pages (all posting lists fit
-  inline).
-- `nPendingPages = 0`: The pending list is empty (no fast-inserted entries
-  waiting to be merged).
 
-GIN has a unique two-level structure:
-1. An **entry tree** (B-tree of keys/lexemes).
+| Field | Meaning |
+|-------|---------|
+| `nEntries` | Number of distinct lexemes indexed. |
+| `nEntryPages` | Pages in the entry tree (B-tree of keys). |
+| `nDataPages` | Pages for posting trees (0 if all posting lists fit inline). |
+| `nPendingPages` | Fast-inserted entries waiting to be merged. |
+
+### 8.2 Entry Pages
+
+Navigate to an entry page. GIN has a two-level structure:
+
+1. An **entry tree** — a B-tree of keys (lexemes).
 2. For each key, a **posting list** or **posting tree** of heap TIDs.
 
-The `GIN_META`, `GIN_LEAF`, `GIN_DATA`, and `GIN_COMPRESSED` flags tell you
-what kind of GIN page you're looking at.
+![GIN entry page](screenshots/tutorial-gin-entry.png)
+
+The `GIN_LEAF`, `GIN_DATA`, and `GIN_COMPRESSED` flags in the special region
+tell you what kind of GIN page you're looking at.
 
 ---
 
-## 8. BRIN Index Pages
+## 9. BRIN Index Pages
 
-BRIN (Block Range Index) is the most space-efficient index type. Instead of
-indexing individual rows, it stores summary information for ranges of
-consecutive heap pages.
+Open the `idx_brin_rental_id` file. BRIN is the most space-efficient index
+type — instead of indexing individual rows, it stores summary information for
+ranges of consecutive heap pages.
 
-```
-pgpageshell(page 0)> info
+![BRIN meta page](screenshots/tutorial-brin-meta.png)
 
-=== Special Region ===
-  BRIN Special Space (BrinSpecialSpace):
-    flags     : 0x0000
-    page_type : 0xF091 (BRIN_PAGETYPE_META)
+The meta page shows:
 
-  BRIN Meta Page Data (BrinMetaPageData):
-    brinMagic        : 0xA8109CFA (valid)
-    brinVersion      : 1
-    pagesPerRange    : 128
-    lastRevmapPage   : 1
-```
+| Field | Meaning |
+|-------|---------|
+| `pagesPerRange` | How many heap pages each BRIN entry covers (default: 128). |
+| `lastRevmapPage` | Location of the last range map page. |
 
 BRIN has three page types:
-- **Meta page** (page 0): Stores `pagesPerRange` (128 heap pages per range)
-  and the location of the revmap.
-- **Revmap pages**: A map from block range number to the BRIN tuple that
-  summarizes it.
-- **Regular pages**: Store the actual summary tuples (min/max values for each
-  range).
 
-With `pagesPerRange = 128`, each BRIN entry covers 128 heap pages (about 1 MB
-of table data). For the `rental` table with ~16,000 rows across 192 pages,
-the entire BRIN index fits in just 3 pages (24 KB) compared to a B-tree that
-would need ~46 pages (376 KB).
+- **Meta page** (page 0): Configuration.
+- **Revmap pages**: Map from block range number to the summary tuple.
+- **Regular pages**: Store the actual summary tuples (min/max values).
 
-BRIN works best when the indexed column is naturally correlated with the
-physical row order — like auto-incrementing IDs or timestamps.
+With `pagesPerRange = 128`, each BRIN entry covers about 1 MB of table data.
+The entire BRIN index for the rental table fits in just 3 pages (24 KB) —
+compare that to a B-tree on the same column which would need dozens of pages.
 
----
-
-## 9. Comparing Page Structures
-
-Here's a summary of how the special space differs across index types:
-
-| Index Type | Special Size | Key Fields | Magic/ID |
-|------------|-------------|------------|----------|
-| **Heap** | 0 bytes | (none) | — |
-| **B-tree** | 16 bytes | prev, next, level, flags, cycleid | `0x053162` (meta magic) |
-| **Hash** | 16 bytes | prevblkno, nextblkno, bucket, flag | `0xFF80` (page ID) |
-| **GiST** | 16 bytes | nsn, rightlink, flags | `0xFF81` (page ID) |
-| **GIN** | 8 bytes | rightlink, maxoff, flags | — |
-| **SP-GiST** | 8 bytes | flags, nRedirection, nPlaceholder | `0xFF82` (page ID) |
-| **BRIN** | 8 bytes | flags, page_type | `0xF091`-`0xF093` (type) |
-
-`pgpageshell` uses these magic numbers and sizes to auto-detect the page type
-when you open a file.
+![BRIN regular page](screenshots/tutorial-brin-regular.png)
 
 ---
 
 ## 10. Exercises
 
-1. **Find a specific actor**: Use `data` on the actor heap file. Can you find
-   the tuple for "JOHNNY DEPP" (actor_id = 30)? What page and line pointer is
-   it on?
+Try these on your own to deepen your understanding:
 
-2. **Trace an index lookup**: Look up actor_id = 30 in the B-tree index. Find
-   the index tuple, note its `t_tid`, then go to that heap page and line
-   pointer to find the actual row.
+1. **UPDATE and inspect**: Run `UPDATE actor SET first_name = 'UPDATED' WHERE actor_id = 1;`
+   then `CHECKPOINT;`. Re-open the actor file and look at page 0. Find the old
+   tuple with `HOT_UPDATED` and the new tuple with `HEAP_ONLY`. Notice how
+   `t_ctid` on the old tuple points to the new one.
 
-3. **Observe MVCC**: Connect to the database, UPDATE an actor's name, then
-   CHECKPOINT. Inspect the heap page with `data` — you should see the old
-   tuple with `HOT_UPDATED` and the new tuple with `HEAP_ONLY`.
+2. **Compare index sizes**: Open each index file and count the pages in the
+   sidebar. Compare the BRIN index on `rental_id` (3 pages) with a B-tree on
+   the same column. Why is BRIN so much smaller?
 
-4. **Compare index sizes**: Use `pages` on each index file. Count the pages.
-   Compare the BRIN index on `rental_id` (3 pages) with the B-tree rental
-   primary key (46 pages). Why is BRIN so much smaller?
+3. **Inspect after VACUUM**: Run `VACUUM actor;` then `CHECKPOINT;`. Re-open
+   the actor file. Look for `XMIN_FROZEN` flags in tuple details and
+   `REDIRECT`/`UNUSED` line pointer statuses.
 
-5. **Inspect after VACUUM**: Run `VACUUM actor;` then `CHECKPOINT;`. Re-inspect
-   the actor heap page. Look for `XMIN_FROZEN` flags and `REDIRECT`/`UNUSED`
-   line pointers.
+4. **DELETE and observe dead tuples**: Delete a few rows, run `CHECKPOINT;`,
+   and re-inspect. Find line pointers with `DEAD` status. Then run `VACUUM`,
+   checkpoint again, and see them become `UNUSED`.
+
+5. **Fill a page**: Insert enough rows into a small table to fill a page
+   completely (no gray cells visible). Then insert one more row and watch
+   PostgreSQL allocate a new page.
