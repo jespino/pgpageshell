@@ -64,6 +64,7 @@ type FileEntry struct {
 	Index      int    `json:"index"`
 	Filename   string `json:"filename"`
 	TotalPages int    `json:"total_pages"`
+	FileType   string `json:"file_type"`
 }
 
 func buildPageDetail(p *Page) PageDetail {

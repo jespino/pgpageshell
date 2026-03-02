@@ -107,7 +107,7 @@ export function App() {
         >
           {files.map((f) => (
             <option key={f.index} value={f.index}>
-              {f.filename} ({f.total_pages} pages)
+              {f.filename} ({f.file_type}, {f.total_pages} pages)
             </option>
           ))}
         </select>

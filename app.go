@@ -17,6 +17,7 @@ type App struct {
 type AppFile struct {
 	Filename   string
 	TotalPages int
+	FileType   string
 }
 
 func NewApp(filenames []string) (*App, error) {
@@ -30,7 +31,13 @@ func NewApp(filenames []string) (*App, error) {
 		if fi.Size()%PageSize != 0 {
 			fmt.Fprintf(os.Stderr, "Warning: %s size %d is not a multiple of %d\n", fn, fi.Size(), PageSize)
 		}
-		files = append(files, AppFile{Filename: fn, TotalPages: totalPages})
+		fileType := "unknown"
+		if totalPages > 0 {
+			if pg, err := ReadPage(fn, 0); err == nil {
+				fileType = pg.Detected.String()
+			}
+		}
+		files = append(files, AppFile{Filename: fn, TotalPages: totalPages, FileType: fileType})
 	}
 	return &App{files: files}, nil
 }
@@ -43,7 +50,7 @@ func (a *App) startup(ctx context.Context) {
 func (a *App) GetFiles() []FileEntry {
 	entries := make([]FileEntry, len(a.files))
 	for i, f := range a.files {
-		entries[i] = FileEntry{Index: i, Filename: f.Filename, TotalPages: f.TotalPages}
+		entries[i] = FileEntry{Index: i, Filename: f.Filename, TotalPages: f.TotalPages, FileType: f.FileType}
 	}
 	return entries
 }
@@ -123,7 +130,14 @@ func (a *App) OpenFile() ([]FileEntry, error) {
 		fmt.Fprintf(os.Stderr, "Warning: %s size %d is not a multiple of %d\n", path, fi.Size(), PageSize)
 	}
 
-	a.files = append(a.files, AppFile{Filename: path, TotalPages: totalPages})
+	fileType := "unknown"
+	if totalPages > 0 {
+		if pg, err := ReadPage(path, 0); err == nil {
+			fileType = pg.Detected.String()
+		}
+	}
+
+	a.files = append(a.files, AppFile{Filename: path, TotalPages: totalPages, FileType: fileType})
 	return a.GetFiles(), nil
 }
 

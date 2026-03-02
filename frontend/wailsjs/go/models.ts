@@ -3,6 +3,7 @@ export namespace main {
     index: number;
     filename: string;
     total_pages: number;
+    file_type: string;
   }
 
   export interface PageSummary {
