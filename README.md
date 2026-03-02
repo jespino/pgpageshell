@@ -42,12 +42,6 @@ GiST, GIN, and BRIN — all from the perspective of raw page data.
 
 ## Installation
 
-### Homebrew (macOS / Linux)
-
-```bash
-brew install jespino/tap/pgpageshell
-```
-
 ### Debian / Ubuntu
 
 Download the `.deb` package from the [latest release](https://github.com/jespino/pgpageshell/releases/latest) and install it:
@@ -64,10 +58,10 @@ sudo rpm -i pgpageshell_*.rpm
 
 ### Binary download
 
-Pre-built binaries for Linux, macOS, and Windows (amd64 and arm64) are
+Pre-built binaries for Linux (amd64 and arm64) and Windows (amd64) are
 available on the [releases page](https://github.com/jespino/pgpageshell/releases/latest).
 Download the archive for your platform, extract it, and place the binary in
-your `PATH`.
+your `PATH`. For macOS, build from source (see below).
 
 ### Building from source
 
