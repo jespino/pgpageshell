@@ -106,6 +106,10 @@ jobs:
           VERSION=${GITHUB_REF_NAME#v}
           mkdir -p dist
 
+          # Restore executable permissions (stripped by upload-artifact)
+          chmod +x build/linux-amd64/pgpageshell
+          chmod +x build/linux-arm64/pgpageshell
+
           # Linux amd64
           tar czf dist/pgpageshell_${VERSION}_linux_amd64.tar.gz -C build/linux-amd64 pgpageshell
           # Linux arm64
