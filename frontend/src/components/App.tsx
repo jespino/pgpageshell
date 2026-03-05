@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
 import type { FileInfo, PageDetail, TooltipContent, TooltipState, SelectedElement } from "../types";
-import type { main } from "../../wailsjs/go/models";
-import { GetFiles, GetFileInfo, GetPageDetail, OpenFile, CloseFile } from "../../wailsjs/go/main/App";
+import type { DataBackend, FileEntry } from "../backend";
 import { Sidebar } from "./Sidebar";
 import { PageSVG } from "./PageSVG";
 import { Tooltip } from "./Tooltip";
 
-export function App() {
-  const [files, setFiles] = useState<main.FileEntry[]>([]);
+interface AppProps {
+  backend: DataBackend;
+}
+
+export function App({ backend }: AppProps) {
+  const [files, setFiles] = useState<FileEntry[]>([]);
   const [selectedFileIdx, setSelectedFileIdx] = useState(0);
   const [fileInfo, setFileInfo] = useState<FileInfo | null>(null);
   const [selectedPage, setSelectedPage] = useState(0);
@@ -20,26 +23,26 @@ export function App() {
     setPageDetail(null);
     setSelectedPage(0);
     setSelectedElement(null);
-    GetFileInfo(fileIdx).then((data) => {
+    backend.getFileInfo(fileIdx).then((data) => {
       setFileInfo(data);
       if (data.total_pages > 0) {
-        GetPageDetail(fileIdx, 0).then(setPageDetail);
+        backend.getPageDetail(fileIdx, 0).then(setPageDetail);
       }
     });
-  }, []);
+  }, [backend]);
 
   const loadPage = useCallback((n: number) => {
     setSelectedPage(n);
     setSelectedElement(null);
-    GetPageDetail(selectedFileIdx, n).then(setPageDetail);
-  }, [selectedFileIdx]);
+    backend.getPageDetail(selectedFileIdx, n).then(setPageDetail);
+  }, [backend, selectedFileIdx]);
 
   useEffect(() => {
-    GetFiles().then((entries) => {
+    backend.getFiles().then((entries) => {
       setFiles(entries);
       if (entries.length > 0) loadFile(0);
     });
-  }, [loadFile]);
+  }, [backend, loadFile]);
 
   const showTooltip = useCallback((evt: React.MouseEvent, content: TooltipContent) => {
     setTooltip({ x: evt.clientX + 12, y: evt.clientY + 12, content });
@@ -50,16 +53,18 @@ export function App() {
   }, []);
 
   const handleOpenFile = useCallback(() => {
-    OpenFile().then((entries) => {
+    if (!backend.openFile) return;
+    backend.openFile().then((entries) => {
       setFiles(entries);
       if (entries.length > 0 && entries.length > files.length) {
         loadFile(entries.length - 1);
       }
     });
-  }, [files.length, loadFile]);
+  }, [backend, files.length, loadFile]);
 
   const handleCloseFile = useCallback(() => {
-    CloseFile(selectedFileIdx).then((entries) => {
+    if (!backend.closeFile) return;
+    backend.closeFile(selectedFileIdx).then((entries) => {
       setFiles(entries);
       if (entries.length > 0) {
         loadFile(Math.min(selectedFileIdx, entries.length - 1));
@@ -68,7 +73,7 @@ export function App() {
         setPageDetail(null);
       }
     });
-  }, [selectedFileIdx, loadFile]);
+  }, [backend, selectedFileIdx, loadFile]);
 
   if (files.length === 0) {
     return (
@@ -82,9 +87,11 @@ export function App() {
               Open a PostgreSQL heap or index data file to inspect its pages,
               headers, line pointers, tuples, and special regions.
             </p>
-            <button className="welcome-btn" onClick={handleOpenFile}>
-              Open File
-            </button>
+            {backend.openFile && (
+              <button className="welcome-btn" onClick={handleOpenFile}>
+                Open File
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -111,10 +118,12 @@ export function App() {
             </option>
           ))}
         </select>
-        <button className="topbar-btn" onClick={handleOpenFile}>
-          Open File
-        </button>
-        {files.length > 1 && (
+        {backend.openFile && (
+          <button className="topbar-btn" onClick={handleOpenFile}>
+            Open File
+          </button>
+        )}
+        {backend.closeFile && files.length > 1 && (
           <button
             className="topbar-btn topbar-btn-danger"
             onClick={handleCloseFile}

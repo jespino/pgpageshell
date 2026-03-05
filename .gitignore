@@ -7,6 +7,8 @@ pgpageshell
 # Frontend
 frontend/node_modules/
 frontend/dist/
+web/node_modules/
+web/dist/
 .pnpm-store/
 
 # GoReleaser
@@ -18,3 +20,5 @@ dist/
 *.swp
 *.swo
 .DS_Store
+web/tsconfig.tsbuildinfo
+frontend/tsconfig.tsbuildinfo

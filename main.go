@@ -19,20 +19,31 @@ var assets embed.FS
 
 func main() {
 	shellMode := false
+	exportJSON := false
 	var filenames []string
 
 	args := os.Args[1:]
 	for i := 0; i < len(args); i++ {
 		if args[i] == "--shell" {
 			shellMode = true
+		} else if args[i] == "--export-json" {
+			exportJSON = true
 		} else {
 			filenames = append(filenames, args[i])
 		}
 	}
 
-	if shellMode && len(filenames) == 0 {
-		fmt.Fprintf(os.Stderr, "Usage: pgpageshell --shell <postgres-data-file>\n")
+	if (shellMode || exportJSON) && len(filenames) == 0 {
+		fmt.Fprintf(os.Stderr, "Usage: pgpageshell [--shell|--export-json] <postgres-data-file> [file2 ...]\n")
 		os.Exit(1)
+	}
+
+	if exportJSON {
+		if err := runExportJSON(filenames); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		return
 	}
 
 	if !shellMode {
