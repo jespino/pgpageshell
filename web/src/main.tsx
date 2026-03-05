@@ -4,7 +4,7 @@ import "@shared/index.css";
 import { App } from "@shared/components/App";
 import { createStaticBackend } from "@shared/backends/static";
 
-const backend = createStaticBackend("/data.json");
+const backend = createStaticBackend(import.meta.env.BASE_URL + "data.json");
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
