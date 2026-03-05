@@ -15,9 +15,15 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
+    "types": ["vite/client"],
+    "baseUrl": ".",
     "paths": {
-      "@shared/*": ["../frontend/src/*"]
+      "@shared/*": ["../frontend/src/*"],
+      "react": ["./node_modules/@types/react"],
+      "react/jsx-runtime": ["./node_modules/@types/react/jsx-runtime"],
+      "react-dom/client": ["./node_modules/@types/react-dom/client"]
     }
   },
-  "include": ["src", "../frontend/src"]
+  "include": ["src", "../frontend/src"],
+  "exclude": ["../frontend/src/main.tsx", "../frontend/src/backends/wails.ts"]
 }

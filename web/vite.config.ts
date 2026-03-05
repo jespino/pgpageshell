@@ -9,5 +9,9 @@ export default defineConfig({
     alias: {
       "@shared": path.resolve(__dirname, "../frontend/src"),
     },
+    dedupe: ["react", "react-dom"],
+  },
+  optimizeDeps: {
+    include: ["react", "react-dom"],
   },
 });
