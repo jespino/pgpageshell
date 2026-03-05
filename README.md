@@ -6,6 +6,8 @@
   [![Build with Ona](https://ona.com/build-with-ona.svg)](https://app.ona.com/#https://github.com/jespino/pgpageshell)
 
   A desktop application for inspecting PostgreSQL data files at the page level.
+
+  **[Try it online](https://jespino.github.io/pgpageshell/)** — no installation needed, pre-loaded with the [Pagila](https://github.com/devrimgunduz/pagila) sample database.
 </div>
 
 PostgreSQL stores all table and index data in 8 KB pages on disk. These pages
