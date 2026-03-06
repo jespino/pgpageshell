@@ -76,6 +76,8 @@ func buildPageDetail(p *Page) PageDetail {
 		pageSize = PageSize
 	}
 
+	subtype := detectPageSubtype(p)
+
 	headerEnd := PageHeaderSize
 	linpEnd := int(h.Lower)
 	freeEnd := int(h.Upper)
@@ -92,41 +94,79 @@ func buildPageDetail(p *Page) PageDetail {
 		RegionType: "header",
 	})
 
-	if linpEnd > headerEnd {
-		nItems := (linpEnd - headerEnd) / ItemIdSize
-		regions = append(regions, PageRegion{
-			Name:       fmt.Sprintf("Line Pointers (%d)", nItems),
-			StartByte:  headerEnd,
-			EndByte:    linpEnd,
-			Size:       linpEnd - headerEnd,
-			RegionType: "linp",
-		})
-	}
+	// For meta/bitmap/revmap pages the bytes between header and special
+	// are structured data, not line pointers + tuples.
+	specialSubtype := subtype == "meta" || subtype == "bitmap" || subtype == "revmap"
 
-	if freeEnd > linpEnd {
-		regions = append(regions, PageRegion{
-			Name:       "Free Space",
-			StartByte:  linpEnd,
-			EndByte:    freeEnd,
-			Size:       freeEnd - linpEnd,
-			RegionType: "free",
-		})
-	}
-
-	if tupleEnd > freeEnd {
-		tupleLabel := "Tuples"
-		if p.Detected == PageTypeHeap {
-			tupleLabel = "Heap Tuples"
-		} else if p.Detected != PageTypeUnknown {
-			tupleLabel = fmt.Sprintf("Index Tuples (%s)", p.Detected)
+	if specialSubtype {
+		// Determine the extent of the structured content.
+		// BRIN revmap pages have pd_lower=24 (no adjustment) but the
+		// revmap array fills from header to pd_special.
+		contentEnd := linpEnd
+		if subtype == "revmap" && linpEnd <= headerEnd {
+			contentEnd = tupleEnd // data fills up to special
 		}
-		regions = append(regions, PageRegion{
-			Name:       tupleLabel,
-			StartByte:  freeEnd,
-			EndByte:    tupleEnd,
-			Size:       tupleEnd - freeEnd,
-			RegionType: "tuple",
-		})
+
+		if contentEnd > headerEnd {
+			regionType := subtype // "meta", "bitmap", or "revmap"
+			name := specialSubtypeRegionName(p.Detected, subtype, contentEnd-headerEnd)
+			regions = append(regions, PageRegion{
+				Name:       name,
+				StartByte:  headerEnd,
+				EndByte:    contentEnd,
+				Size:       contentEnd - headerEnd,
+				RegionType: regionType,
+			})
+
+			// Free space after the structured content
+			if freeEnd > contentEnd {
+				regions = append(regions, PageRegion{
+					Name:       "Free Space",
+					StartByte:  contentEnd,
+					EndByte:    freeEnd,
+					Size:       freeEnd - contentEnd,
+					RegionType: "free",
+				})
+			}
+		}
+	} else {
+		// Normal slotted-page layout: line pointers, free space, tuples
+		if linpEnd > headerEnd {
+			nItems := (linpEnd - headerEnd) / ItemIdSize
+			regions = append(regions, PageRegion{
+				Name:       fmt.Sprintf("Line Pointers (%d)", nItems),
+				StartByte:  headerEnd,
+				EndByte:    linpEnd,
+				Size:       linpEnd - headerEnd,
+				RegionType: "linp",
+			})
+		}
+
+		if freeEnd > linpEnd {
+			regions = append(regions, PageRegion{
+				Name:       "Free Space",
+				StartByte:  linpEnd,
+				EndByte:    freeEnd,
+				Size:       freeEnd - linpEnd,
+				RegionType: "free",
+			})
+		}
+
+		if tupleEnd > freeEnd {
+			tupleLabel := "Tuples"
+			if p.Detected == PageTypeHeap {
+				tupleLabel = "Heap Tuples"
+			} else if p.Detected != PageTypeUnknown {
+				tupleLabel = fmt.Sprintf("Index Tuples (%s)", p.Detected)
+			}
+			regions = append(regions, PageRegion{
+				Name:       tupleLabel,
+				StartByte:  freeEnd,
+				EndByte:    tupleEnd,
+				Size:       tupleEnd - freeEnd,
+				RegionType: "tuple",
+			})
+		}
 	}
 
 	if specialEnd > tupleEnd {
@@ -150,21 +190,24 @@ func buildPageDetail(p *Page) PageDetail {
 		"pd_prune_xid":        fmt.Sprintf("%d", h.PruneXID),
 	}
 
-	linePointers := make([]LinePointerInfo, len(p.Items))
-	for i, lp := range p.Items {
-		linePointers[i] = LinePointerInfo{
-			Index:  i + 1,
-			Status: lp.FlagsStr(),
-			Offset: int(lp.Offset()),
-			Length: int(lp.Length()),
+	var linePointers []LinePointerInfo
+	if specialSubtype {
+		linePointers = []LinePointerInfo{}
+	} else {
+		linePointers = make([]LinePointerInfo, len(p.Items))
+		for i, lp := range p.Items {
+			linePointers[i] = LinePointerInfo{
+				Index:  i + 1,
+				Status: lp.FlagsStr(),
+				Offset: int(lp.Offset()),
+				Length: int(lp.Length()),
+			}
 		}
 	}
 
-	subtype := detectPageSubtype(p)
 	isIndex := p.Detected != PageTypeHeap && p.Detected != PageTypeUnknown
-	skipTuples := subtype == "meta" || subtype == "bitmap" || subtype == "revmap"
 	var tuples []TupleInfo
-	if skipTuples {
+	if specialSubtype {
 		tuples = []TupleInfo{}
 	} else {
 		tuples = buildTupleInfos(p, isIndex, subtype)
@@ -181,6 +224,20 @@ func buildPageDetail(p *Page) PageDetail {
 		Tuples:       tuples,
 		SpecialInfo:  specialInfo,
 	}
+}
+
+func specialSubtypeRegionName(pageType PageType, subtype string, size int) string {
+	switch subtype {
+	case "meta":
+		return fmt.Sprintf("%s Meta Data (%d bytes)", pageType, size)
+	case "bitmap":
+		bits := size * 8
+		return fmt.Sprintf("Overflow Bitmap (%d bytes, %d bits)", size, bits)
+	case "revmap":
+		entries := size / 6 // each ItemPointerData is 6 bytes
+		return fmt.Sprintf("Revmap Entries (%d entries, %d bytes)", entries, size)
+	}
+	return fmt.Sprintf("%s (%d bytes)", subtype, size)
 }
 
 func detectPageSubtype(p *Page) string {

@@ -55,6 +55,9 @@ function buildCellMap(detail: PageDetail): CellInfo[] {
   const freeRegion = regions.find((r) => r.region_type === "free");
   const headerRegion = regions.find((r) => r.region_type === "header");
   const specialRegion = regions.find((r) => r.region_type === "special");
+  const metaRegion = regions.find((r) => r.region_type === "meta");
+  const bitmapRegion = regions.find((r) => r.region_type === "bitmap");
+  const revmapRegion = regions.find((r) => r.region_type === "revmap");
 
   function fillRange(startByte: number, endByte: number, info: CellInfo) {
     const startCell = Math.floor(startByte / BYTES_PER_CELL);
@@ -80,6 +83,27 @@ function buildCellMap(detail: PageDetail): CellInfo[] {
       },
       select: { type: "region", data: headerRegion },
     });
+  }
+
+  // Structured data regions for special page subtypes
+  for (const structRegion of [metaRegion, bitmapRegion, revmapRegion]) {
+    if (structRegion && structRegion.size > 0) {
+      const tooltipRows: [string, string | number][] = [
+        ["Offset", `${structRegion.start_byte} – ${structRegion.end_byte - 1}`],
+        ["Size", `${structRegion.size} bytes`],
+      ];
+      if (detail.special_info) {
+        for (const [k, v] of Object.entries(detail.special_info)) {
+          tooltipRows.push([k, v]);
+        }
+      }
+      fillRange(structRegion.start_byte, structRegion.end_byte, {
+        regionType: structRegion.region_type,
+        label: structRegion.name,
+        tooltip: { title: structRegion.name, rows: tooltipRows },
+        select: { type: "region", data: structRegion },
+      });
+    }
   }
 
   if (linpRegion) {
@@ -168,6 +192,10 @@ export function PageSVG({
   onSelect,
 }: PageSVGProps) {
   const cellMap = useMemo(() => buildCellMap(detail), [detail]);
+  const regionTypes = useMemo(
+    () => new Set((detail.regions ?? []).map((r) => r.region_type)),
+    [detail]
+  );
   const tuples = detail.tuples ?? [];
 
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
@@ -209,7 +237,7 @@ export function PageSVG({
           </text>
 
           {/* Legend */}
-          <Legend />
+          <Legend regionTypes={regionTypes} />
 
           {/* Grid background */}
           <rect
@@ -319,14 +347,20 @@ export function PageSVG({
 
 /* ---- Legend ---- */
 
-function Legend() {
-  const items: { label: string; type: string }[] = [
-    { label: "Header", type: "header" },
-    { label: "Line Ptr", type: "linp" },
-    { label: "Free", type: "free" },
-    { label: "Tuple", type: "tuple" },
-    { label: "Special", type: "special" },
-  ];
+// All possible legend entries; we filter to those present on the page.
+const ALL_LEGEND_ITEMS: { label: string; type: string }[] = [
+  { label: "Header", type: "header" },
+  { label: "Line Ptr", type: "linp" },
+  { label: "Meta", type: "meta" },
+  { label: "Bitmap", type: "bitmap" },
+  { label: "Revmap", type: "revmap" },
+  { label: "Free", type: "free" },
+  { label: "Tuple", type: "tuple" },
+  { label: "Special", type: "special" },
+];
+
+function Legend({ regionTypes }: { regionTypes: Set<string> }) {
+  const items = ALL_LEGEND_ITEMS.filter((it) => regionTypes.has(it.type));
   const boxSize = 10;
   const gap = 14;
   const totalW =
