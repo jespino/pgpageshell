@@ -175,6 +175,7 @@ body {
 
 .grid-panel {
   flex-shrink: 0;
+  height: 100%;
 }
 
 .grid-panel svg {
@@ -382,11 +383,11 @@ body {
   display: none;
 }
 
-/* SVG grid default: constrain width on desktop */
+/* SVG grid: fill available height on desktop, scale width proportionally */
 .page-grid-svg {
-  width: 100%;
-  max-width: 560px;
-  height: auto;
+  height: 100%;
+  width: auto;
+  max-width: 100%;
 }
 
 /* ── Mobile portrait ── */
@@ -462,9 +463,12 @@ body {
 
   .grid-panel {
     width: 100%;
+    height: auto;
   }
 
   .page-grid-svg {
+    width: 100%;
+    height: auto;
     max-width: 100%;
   }
 
