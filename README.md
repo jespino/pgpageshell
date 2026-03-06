@@ -92,10 +92,15 @@ make
 ```
 
 The GUI displays a page grid (32×64 cells, 4 bytes each) with color-coded
-regions: header, line pointers, tuples, free space, and special regions.
+regions: header (blue), line pointers (green), tuples (purple), free space
+(gray), and special (orange). Index meta pages, hash bitmap pages, and BRIN
+revmap pages use dedicated colors (gold, cyan, purple) and show per-field
+detail on hover — each cell displays the struct field name and decoded value.
+
 Hovering a cell highlights related elements (e.g., a line pointer and its
 corresponding tuple). The sidebar lists pages and shows details for the
-selected element.
+selected element. The legend adapts to show only the region types present on
+the current page.
 
 You can open additional files or close existing ones from the toolbar at any
 time.
@@ -109,6 +114,17 @@ You can find the file path for a table or index with:
 ```sql
 SELECT pg_relation_filepath('my_table');
 -- Returns something like: base/16384/17543
+```
+
+### Export to JSON
+
+Export page data as JSON for use with the static web version or external tools:
+
+```bash
+./pgpageshell --export-json file1 file2 > data.json
+
+# Use custom display names
+./pgpageshell --export-json "actor=/path/to/16423" "actor_pkey (btree)=/path/to/16606" > data.json
 ```
 
 ### Interactive shell
@@ -138,12 +154,12 @@ it accordingly:
 | Type | Detection | Special Region Contents |
 |------|-----------|------------------------|
 | **Heap** | No special space | — |
-| **B-tree** | 16-byte special, valid btpo_flags | prev/next sibling, level, flags. Meta pages: magic, root, tree level. |
-| **Hash** | 16-byte special, page_id = `0xFF80` | prev/next block, bucket number, page type. Meta pages: magic, ntuples, fill factor, masks. |
+| **B-tree** | 16-byte special, valid btpo_flags | prev/next sibling, level, flags. Meta pages show per-field detail (magic, root, level, fastroot). Internal pages show child block pointers. |
+| **Hash** | 16-byte special, page_id = `0xFF80` | prev/next block, bucket number, page type. Meta pages show per-field detail (magic, ntuples, fill factor, masks, spares, mapp). Bitmap pages show per-word bit counts. |
 | **GiST** | 16-byte special, page_id = `0xFF81` | NSN, rightlink, flags (leaf/deleted/follow-right). |
-| **GIN** | 8-byte special, valid flags | Rightlink, maxoff, flags (data/leaf/meta/list/compressed). Meta pages: pending list, entry/data page counts. |
-| **SP-GiST** | 8-byte special, page_id = `0xFF82` | Flags (meta/deleted/leaf/nulls), redirect and placeholder counts. |
-| **BRIN** | 8-byte special, type = `0xF091`–`0xF093` | Flags, page type (meta/revmap/regular). Meta pages: magic, version, pages-per-range. |
+| **GIN** | 8-byte special, valid flags | Rightlink, maxoff, flags (data/leaf/meta/list/compressed). Meta pages show per-field detail (pending list, entry/data page counts, nEntries). |
+| **SP-GiST** | 8-byte special, page_id = `0xFF82` | Flags (meta/deleted/leaf/nulls), redirect and placeholder counts. Meta pages show per-field detail (magic, lastUsedPages cache). |
+| **BRIN** | 8-byte special, type = `0xF091`–`0xF093` | Flags, page type (meta/revmap/regular). Meta pages show per-field detail (magic, version, pages-per-range). Revmap pages show per-entry (block, offset) targets. |
 
 ## License
 

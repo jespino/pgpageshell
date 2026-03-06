@@ -119,10 +119,19 @@ page grid — a 32×64 grid where each cell represents 4 bytes of the page.
 The grid is color-coded by region:
 
 - **Blue** — Page header (24 bytes, the first 6 cells)
-- **Purple** — Line pointers (4 bytes each, one cell per pointer)
+- **Green** — Line pointers (4 bytes each, one cell per pointer)
 - **Gray** — Free space
-- **Green** — Tuples (heap rows or index entries)
+- **Purple** — Tuples (heap rows or index entries)
 - **Orange** — Special region (index-specific metadata at the end of the page)
+
+For special page subtypes, additional colors appear:
+
+- **Gold** — Meta data (structured fields in index meta pages)
+- **Cyan** — Bitmap data (hash overflow bitmap pages)
+- **Violet** — Revmap entries (BRIN range map pages)
+
+The legend at the top of the grid adapts to show only the region types present
+on the current page.
 
 ![Page grid color legend](screenshots/tutorial-page-grid.webp)
 
@@ -159,7 +168,7 @@ gray cells in the grid.
 
 ### 4.2 Line Pointers and Tuples
 
-Hover over a purple green (line pointer). Notice how the corresponding purple 
+Hover over a green cell (line pointer). Notice how the corresponding purple
 cells (the tuple it points to) light up simultaneously. This cross-highlighting
 shows the connection between a line pointer and its tuple.
 
@@ -182,7 +191,7 @@ Each heap tuple has a header with MVCC metadata:
 ### 4.3 Page Fullness
 
 Look at how much gray (free space) is visible in the grid. Page 0 of the actor
-table is nearly full — most of the page is green (tuples) and purple (line
+table is nearly full — most of the page is purple (tuples) and green (line
 pointers), with only a thin strip of gray in between.
 
 Now click on page 1 in the sidebar. This page has fewer tuples and more free
@@ -198,16 +207,23 @@ Open the `actor_pkey` file (the B-tree primary key index on `actor_id`).
 
 ### 5.1 Meta Page (Page 0)
 
-Every B-tree starts with a meta page. Select page 0.
+Every B-tree starts with a meta page. Select page 0. The grid title shows
+"B-tree / meta" to identify the page subtype.
 
 ![B-tree meta page](screenshots/tutorial-btree-meta.webp)
 
-The orange cells at the bottom are the special region. Click on them to see
-the B-tree meta data:
+The gold cells after the header are the `BTMetaPageData` struct. Hover over
+individual cells to see each field's name and decoded value. The items panel
+on the right lists all meta fields:
 
+- `btm_magic`: Should be `0x00053162`.
 - `btm_root`: Which page is the root of the tree.
 - `btm_level`: How many levels the tree has. With only 200 actors, the tree
   fits in a single level (root = leaf).
+- `btm_allequalimage`: Whether the index supports deduplication.
+
+The orange cells at the bottom are the special region (`BTPageOpaqueData`)
+with the `BTP_META` flag set.
 
 ### 5.2 Leaf Page
 
@@ -223,8 +239,8 @@ Key differences:
 - **Smaller tuples**: Index tuples are much smaller than heap tuples. Each one
   contains only the indexed key (`actor_id`) and a TID pointing back to the
   heap.
-- **More free space**: The green region is smaller relative to the page size
-  because index entries are compact.
+- **More free space**: The purple region (tuples) is smaller relative to the
+  page size because index entries are compact.
 
 Click on an index tuple to see its detail:
 
@@ -232,6 +248,12 @@ Click on an index tuple to see its detail:
 
 The `t_tid` field (e.g., `(0, 1)`) is the pointer back to the heap — "page 0,
 line pointer 1" in the actor table.
+
+### 5.3 Internal Pages
+
+For larger indexes (like `rental_pkey`), the tree has multiple levels. Internal
+pages show `child_block` instead of `t_tid` for each tuple — this is the
+downlink to a child page in the tree, not a pointer to the heap.
 
 ---
 
@@ -243,21 +265,32 @@ Open the `idx_hash_customer_email` file.
 
 ![Hash meta page](screenshots/tutorial-hash-meta.webp)
 
-The hash meta page stores:
+The hash meta page is large — the `HashMetaPageData` struct occupies most of
+the page. Hover over the gold cells to see individual fields:
 
+- `hashm_magic`: Should be `0x06440640`.
 - `hashm_ntuples`: Total indexed tuples (599 customer emails).
 - `hashm_ffactor`: Target tuples per bucket.
 - `hashm_maxbucket`: Highest bucket number.
+- `hashm_spares[32]`: Array tracking overflow page allocation.
+- `hashm_mapp[...]`: Array of bitmap page block numbers.
 
 ### 6.2 Bucket Page
 
-Navigate to a bucket page (look for pages with type "hash" in the sidebar).
+Navigate to a bucket page (look for pages with subtype "bucket" in the grid
+title).
 
 ![Hash bucket page](screenshots/tutorial-hash-bucket.webp)
 
-Hash pages have four types visible in the special region flags:
+Hash pages have four subtypes visible in the special region flags:
 `LH_META_PAGE`, `LH_BUCKET_PAGE`, `LH_OVERFLOW_PAGE`, and `LH_BITMAP_PAGE`.
 The magic number `0xFF80` in `hasho_page_id` identifies hash pages.
+
+### 6.3 Bitmap Page
+
+Find the bitmap page (typically page 3). The grid shows cyan cells — each
+4-byte cell is one uint32 word tracking 32 overflow pages. Hover to see the
+hex value and how many bits are set (e.g., `0xFFFFFFFF (32/32 bits set)`).
 
 ---
 
@@ -290,14 +323,17 @@ Open the `idx_gin_film_fulltext` file.
 
 ![GIN meta page](screenshots/tutorial-gin-meta.webp)
 
-The GIN meta page reveals the index structure:
+The GIN meta page shows gold cells with per-field detail. Hover over each
+cell to see the `GinMetaPageData` fields:
 
 | Field | Meaning |
 |-------|---------|
+| `head` / `tail` | Pending list boundaries (0xFFFFFFFF if empty). |
 | `nEntries` | Number of distinct lexemes indexed. |
 | `nEntryPages` | Pages in the entry tree (B-tree of keys). |
 | `nDataPages` | Pages for posting trees (0 if all posting lists fit inline). |
 | `nPendingPages` | Fast-inserted entries waiting to be merged. |
+| `ginVersion` | GIN format version. |
 
 ### 8.2 Entry Pages
 
@@ -321,18 +357,27 @@ ranges of consecutive heap pages.
 
 ![BRIN meta page](screenshots/tutorial-brin-meta.webp)
 
-The meta page shows:
+The meta page shows gold cells with per-field detail:
 
 | Field | Meaning |
 |-------|---------|
+| `brinMagic` | Should be `0xA8109CFA`. |
 | `pagesPerRange` | How many heap pages each BRIN entry covers (default: 128). |
 | `lastRevmapPage` | Location of the last range map page. |
 
 BRIN has three page types:
 
-- **Meta page** (page 0): Configuration.
-- **Revmap pages**: Map from block range number to the summary tuple.
+- **Meta page** (page 0): Configuration — gold cells with struct fields.
+- **Revmap pages** (page 1): Map from block range number to the summary tuple — violet cells. Each 6-byte entry shows its target `(block, offset)` on hover, or `(invalid)` for unsummarized ranges.
 - **Regular pages**: Store the actual summary tuples (min/max values).
+
+### 9.1 Revmap Page
+
+Select page 1. The grid fills with violet cells — this is the revmap array.
+Each entry is an `ItemPointerData` (6 bytes) that maps a heap page range to
+the BRIN summary tuple that covers it. Hover to see where each range points.
+
+![BRIN revmap page](screenshots/tutorial-brin-revmap.webp)
 
 With `pagesPerRange = 128`, each BRIN entry covers about 1 MB of table data.
 The entire BRIN index for the rental table fits in just 3 pages (24 KB) —
