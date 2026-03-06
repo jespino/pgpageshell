@@ -163,6 +163,13 @@ export function App({ backend, repoUrl }: AppProps) {
         </div>
         {selectedElement && pageDetail && (
           <div className="mobile-detail">
+            <button
+              className="mobile-detail-close"
+              onClick={() => setSelectedElement(null)}
+              aria-label="Close"
+            >
+              ✕
+            </button>
             <DetailPanel element={selectedElement} detail={pageDetail} />
           </div>
         )}

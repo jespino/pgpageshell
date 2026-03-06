@@ -378,9 +378,27 @@ body {
   background: #2ea043;
 }
 
-/* Mobile detail panel: hidden on desktop, shown on mobile */
+/* Mobile detail panel: hidden on desktop, shown as bottom sheet on mobile */
 .mobile-detail {
   display: none;
+}
+
+.mobile-detail-close {
+  display: none;
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: none;
+  border: none;
+  color: #8b949e;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 8px;
+  line-height: 1;
+}
+
+.mobile-detail-close:hover {
+  color: #c9d1d9;
 }
 
 /* SVG grid: fill available height on desktop, scale width proportionally */
@@ -446,8 +464,27 @@ body {
 
   .mobile-detail {
     display: block;
-    border-top: 1px solid #30363d;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
     background: #161b22;
+    border-top: 1px solid #30363d;
+    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.5);
+    max-height: 40vh;
+    overflow-y: auto;
+    z-index: 900;
+    padding: 12px;
+    animation: slide-up 0.2s ease-out;
+  }
+
+  .mobile-detail-close {
+    display: block;
+  }
+
+  @keyframes slide-up {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
   }
 
   .viewer {
