@@ -364,3 +364,164 @@ body {
 .welcome-btn:hover {
   background: #2ea043;
 }
+
+/* Mobile detail panel: hidden on desktop, shown on mobile */
+.mobile-detail {
+  display: none;
+}
+
+/* SVG grid default: constrain width on desktop */
+.page-grid-svg {
+  width: 100%;
+  max-width: 560px;
+  height: auto;
+}
+
+/* ── Mobile portrait ── */
+@media (max-width: 767px) {
+  .topbar {
+    flex-wrap: wrap;
+    padding: 8px 12px;
+    gap: 8px;
+  }
+
+  .topbar h1 {
+    font-size: 13px;
+  }
+
+  .topbar .file-select {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .main-content {
+    flex-direction: column;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  .sidebar {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid #30363d;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .page-list {
+    display: flex;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .page-list li {
+    white-space: nowrap;
+    border-left: none;
+    border-bottom: 2px solid transparent;
+    padding: 6px 12px;
+    flex-shrink: 0;
+  }
+
+  .page-list li.active {
+    border-left-color: transparent;
+    border-bottom-color: #58a6ff;
+  }
+
+  .sidebar-detail {
+    display: none;
+  }
+
+  .mobile-detail {
+    display: block;
+    border-top: 1px solid #30363d;
+    background: #161b22;
+  }
+
+  .viewer {
+    overflow: visible;
+  }
+
+  .page-view {
+    flex-direction: column;
+    padding: 8px;
+    gap: 12px;
+    overflow: visible;
+  }
+
+  .grid-panel {
+    width: 100%;
+  }
+
+  .page-grid-svg {
+    max-width: 100%;
+  }
+
+  .items-panel {
+    min-width: 0;
+    max-width: 100%;
+    padding-top: 0;
+  }
+
+  .detail-panel td:first-child {
+    width: auto;
+  }
+
+  .tooltip {
+    display: none;
+  }
+
+  .welcome-content {
+    padding: 0 20px;
+  }
+
+  .welcome-title {
+    font-size: 24px;
+  }
+}
+
+/* ── Mobile landscape ── */
+@media (max-height: 500px) and (min-width: 568px) {
+  .topbar {
+    padding: 4px 12px;
+    gap: 8px;
+  }
+
+  .topbar h1 {
+    font-size: 12px;
+  }
+
+  .sidebar {
+    width: 180px;
+  }
+
+  .sidebar-header {
+    padding: 6px 12px;
+  }
+
+  .page-list li {
+    padding: 3px 12px;
+    font-size: 11px;
+  }
+
+  .page-view {
+    padding: 6px;
+    gap: 8px;
+  }
+
+  .items-panel {
+    padding-top: 0;
+    min-width: 200px;
+  }
+}
+
+/* ── Tablet (768–1024px) ── */
+@media (min-width: 768px) and (max-width: 1024px) {
+  .sidebar {
+    width: 200px;
+  }
+
+  .items-panel {
+    min-width: 200px;
+    max-width: 280px;
+  }
+}

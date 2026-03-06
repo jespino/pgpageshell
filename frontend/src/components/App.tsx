@@ -4,6 +4,7 @@ import type { DataBackend, FileEntry } from "../backend";
 import { Sidebar } from "./Sidebar";
 import { PageSVG } from "./PageSVG";
 import { Tooltip } from "./Tooltip";
+import { DetailPanel } from "./DetailPanel";
 
 interface AppProps {
   backend: DataBackend;
@@ -152,6 +153,11 @@ export function App({ backend }: AppProps) {
             <div className="loading">Select a page</div>
           )}
         </div>
+        {selectedElement && pageDetail && (
+          <div className="mobile-detail">
+            <DetailPanel element={selectedElement} detail={pageDetail} />
+          </div>
+        )}
       </div>
       {tooltip && <Tooltip {...tooltip} />}
     </div>

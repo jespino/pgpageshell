@@ -191,8 +191,8 @@ export function PageSVG({
       {/* Left: grid */}
       <div className="grid-panel">
         <svg
-          width={SVG_WIDTH}
-          height={SVG_HEIGHT}
+          viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`}
+          className="page-grid-svg"
           xmlns="http://www.w3.org/2000/svg"
         >
           {/* Title */}
