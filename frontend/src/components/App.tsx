@@ -81,7 +81,7 @@ export function App({ backend }: AppProps) {
       <div className="app">
         <div className="welcome">
           <div className="welcome-content">
-            <img src="/logo.webp" alt="pgpageshell" className="welcome-logo" />
+            <img src={`${import.meta.env.BASE_URL}logo.webp`} alt="pgpageshell" className="welcome-logo" />
             <h1 className="welcome-title">pgpageshell</h1>
             <p className="welcome-subtitle">PostgreSQL Page Inspector</p>
             <p className="welcome-desc">
@@ -106,7 +106,7 @@ export function App({ backend }: AppProps) {
   return (
     <div className="app">
       <div className="topbar">
-        <img src="/logo.webp" alt="" className="topbar-logo" />
+        <img src={`${import.meta.env.BASE_URL}logo.webp`} alt="" className="topbar-logo" />
         <h1>pgpageshell</h1>
         <select
           className="file-select"
