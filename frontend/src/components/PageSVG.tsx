@@ -204,7 +204,7 @@ export function PageSVG({
             fontSize={12}
             fontFamily="monospace"
           >
-            Page {detail.page_num} ({detail.type}) — {PAGE_SIZE} bytes
+            Page {detail.page_num} ({detail.type}{detail.page_subtype ? ` / ${detail.page_subtype}` : ""}) — {PAGE_SIZE} bytes
             — {BYTES_PER_CELL}B per cell
           </text>
 

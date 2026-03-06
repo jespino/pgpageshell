@@ -41,6 +41,7 @@ export interface TupleInfo {
 export interface PageDetail {
   page_num: number;
   type: string;
+  page_subtype?: string;
   header: Record<string, string>;
   regions: PageRegion[];
   line_pointers: LinePointerInfo[];

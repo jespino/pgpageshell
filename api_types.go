@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/binary"
 	"fmt"
+	"math"
 	"strings"
 )
 
@@ -53,6 +54,7 @@ type TupleInfo struct {
 type PageDetail struct {
 	PageNum      int               `json:"page_num"`
 	Type         string            `json:"type"`
+	PageSubtype  string            `json:"page_subtype,omitempty"`
 	Header       map[string]string `json:"header"`
 	Regions      []PageRegion      `json:"regions"`
 	LinePointers []LinePointerInfo `json:"line_pointers"`
@@ -158,13 +160,21 @@ func buildPageDetail(p *Page) PageDetail {
 		}
 	}
 
+	subtype := detectPageSubtype(p)
 	isIndex := p.Detected != PageTypeHeap && p.Detected != PageTypeUnknown
-	tuples := buildTupleInfos(p, isIndex)
-	specialInfo := buildSpecialInfo(p)
+	skipTuples := subtype == "meta" || subtype == "bitmap" || subtype == "revmap"
+	var tuples []TupleInfo
+	if skipTuples {
+		tuples = []TupleInfo{}
+	} else {
+		tuples = buildTupleInfos(p, isIndex, subtype)
+	}
+	specialInfo := buildSpecialInfo(p, subtype)
 
 	return PageDetail{
 		PageNum:      p.PageNum,
 		Type:         p.Detected.String(),
+		PageSubtype:  subtype,
 		Header:       headerMap,
 		Regions:      regions,
 		LinePointers: linePointers,
@@ -173,7 +183,90 @@ func buildPageDetail(p *Page) PageDetail {
 	}
 }
 
-func buildTupleInfos(p *Page, isIndex bool) []TupleInfo {
+func detectPageSubtype(p *Page) string {
+	special := p.SpecialData()
+	le := binLE
+
+	switch p.Detected {
+	case PageTypeBTree:
+		if special != nil && len(special) >= BTreeOpaqueSize {
+			flags := le.Uint16(special[12:14])
+			if flags&BTPMeta != 0 {
+				return "meta"
+			}
+			if flags&BTPLeaf != 0 {
+				return "leaf"
+			}
+			return "internal"
+		}
+	case PageTypeHash:
+		if special != nil && len(special) >= HashOpaqueSize {
+			flag := le.Uint16(special[12:14])
+			pageType := flag & 0x000F
+			switch pageType {
+			case LHMetaPage:
+				return "meta"
+			case LHBucketPage:
+				return "bucket"
+			case LHOverflowPage:
+				return "overflow"
+			case LHBitmapPage:
+				return "bitmap"
+			}
+		}
+	case PageTypeGIN:
+		if special != nil && len(special) >= GINOpaqueSize {
+			flags := le.Uint16(special[6:8])
+			if flags&GINMeta != 0 {
+				return "meta"
+			}
+			if flags&GINData != 0 {
+				if flags&GINLeaf != 0 {
+					return "data-leaf"
+				}
+				return "data-internal"
+			}
+			if flags&GINLeaf != 0 {
+				return "entry-leaf"
+			}
+			return "entry-internal"
+		}
+	case PageTypeSPGiST:
+		if special != nil && len(special) >= SPGistOpaqueSize {
+			flags := le.Uint16(special[0:2])
+			if flags&SPGistMeta != 0 {
+				return "meta"
+			}
+			if flags&SPGistLeaf != 0 {
+				return "leaf"
+			}
+			return "internal"
+		}
+	case PageTypeBRIN:
+		if special != nil && len(special) >= BRINSpecialSize {
+			pageType := le.Uint16(special[6:8])
+			switch pageType {
+			case BRINPageTypeMeta:
+				return "meta"
+			case BRINPageTypeRevmap:
+				return "revmap"
+			case BRINPageTypeRegular:
+				return "regular"
+			}
+		}
+	case PageTypeGiST:
+		if special != nil && len(special) >= GistOpaqueSize {
+			flags := le.Uint16(special[12:14])
+			if flags&GistFLeaf != 0 {
+				return "leaf"
+			}
+			return "internal"
+		}
+	}
+	return ""
+}
+
+func buildTupleInfos(p *Page, isIndex bool, subtype string) []TupleInfo {
 	tuples := make([]TupleInfo, 0, len(p.Items))
 
 	for i, lp := range p.Items {
@@ -214,7 +307,11 @@ func buildTupleInfos(p *Page, isIndex bool) []TupleInfo {
 		if isIndex {
 			if lp.Length() >= uint16(IndexTupleHdrSize) {
 				it := p.ParseIndexTupleHeader(lp.Offset())
-				ti.Properties["t_tid"] = fmt.Sprintf("(%d, %d)", it.TidBlock, it.TidOffset)
+				if subtype == "internal" && p.Detected == PageTypeBTree {
+					ti.Properties["child_block"] = fmt.Sprintf("%d", it.TidBlock)
+				} else {
+					ti.Properties["t_tid"] = fmt.Sprintf("(%d, %d)", it.TidBlock, it.TidOffset)
+				}
 				ti.Properties["t_info"] = fmt.Sprintf("0x%04X (size: %d)", it.Info, it.Size())
 				if flags := it.InfoFlags(); len(flags) > 0 {
 					ti.Properties["flags"] = strings.Join(flags, " | ")
@@ -253,7 +350,7 @@ func buildTupleInfos(p *Page, isIndex bool) []TupleInfo {
 	return tuples
 }
 
-func buildSpecialInfo(p *Page) map[string]string {
+func buildSpecialInfo(p *Page, subtype string) map[string]string {
 	special := p.SpecialData()
 	if special == nil || p.SpecialSize() == 0 {
 		return nil
@@ -276,6 +373,16 @@ func buildSpecialInfo(p *Page) map[string]string {
 				info["btpo_flags_decoded"] = strings.Join(fl, " | ")
 			}
 		}
+		if subtype == "meta" && len(p.Data) >= PageHeaderSize+44 {
+			d := p.Data[PageHeaderSize:]
+			le := binLE
+			info["btm_magic"] = fmt.Sprintf("0x%08X", le.Uint32(d[0:4]))
+			info["btm_version"] = fmt.Sprintf("%d", le.Uint32(d[4:8]))
+			info["btm_root"] = fmt.Sprintf("%d", le.Uint32(d[8:12]))
+			info["btm_level"] = fmt.Sprintf("%d", le.Uint32(d[12:16]))
+			info["btm_fastroot"] = fmt.Sprintf("%d", le.Uint32(d[16:20]))
+			info["btm_fastlevel"] = fmt.Sprintf("%d", le.Uint32(d[20:24]))
+		}
 	case PageTypeHash:
 		if len(special) >= HashOpaqueSize {
 			le := binLE
@@ -287,6 +394,18 @@ func buildSpecialInfo(p *Page) map[string]string {
 			if fl := hashFlags(flag); len(fl) > 0 {
 				info["hasho_flag_decoded"] = strings.Join(fl, " | ")
 			}
+		}
+		if subtype == "meta" && len(p.Data) >= PageHeaderSize+48 {
+			d := p.Data[PageHeaderSize:]
+			le := binLE
+			info["hashm_magic"] = fmt.Sprintf("0x%08X", le.Uint32(d[0:4]))
+			info["hashm_version"] = fmt.Sprintf("%d", le.Uint32(d[4:8]))
+			info["hashm_ntuples"] = fmt.Sprintf("%.0f", math.Float64frombits(le.Uint64(d[8:16])))
+			info["hashm_ffactor"] = fmt.Sprintf("%d", le.Uint16(d[16:18]))
+			info["hashm_bsize"] = fmt.Sprintf("%d", le.Uint16(d[18:20]))
+			info["hashm_maxbucket"] = fmt.Sprintf("%d", le.Uint32(d[24:28]))
+			info["hashm_highmask"] = fmt.Sprintf("0x%08X", le.Uint32(d[28:32]))
+			info["hashm_lowmask"] = fmt.Sprintf("0x%08X", le.Uint32(d[32:36]))
 		}
 	case PageTypeGiST:
 		if len(special) >= GistOpaqueSize {
@@ -308,6 +427,18 @@ func buildSpecialInfo(p *Page) map[string]string {
 			if fl := ginFlags(flags); len(fl) > 0 {
 				info["flags_decoded"] = strings.Join(fl, " | ")
 			}
+		}
+		if subtype == "meta" && len(p.Data) >= PageHeaderSize+48 {
+			d := p.Data[PageHeaderSize:]
+			le := binLE
+			info["head"] = blockStr(le.Uint32(d[0:4]))
+			info["tail"] = blockStr(le.Uint32(d[4:8]))
+			info["nPendingPages"] = fmt.Sprintf("%d", le.Uint32(d[12:16]))
+			info["nPendingHeapTuples"] = fmt.Sprintf("%d", int64(le.Uint64(d[16:24])))
+			info["nTotalPages"] = fmt.Sprintf("%d", le.Uint32(d[24:28]))
+			info["nEntryPages"] = fmt.Sprintf("%d", le.Uint32(d[28:32]))
+			info["nDataPages"] = fmt.Sprintf("%d", le.Uint32(d[32:36]))
+			info["nEntries"] = fmt.Sprintf("%d", int64(le.Uint64(d[40:48])))
 		}
 	case PageTypeSPGiST:
 		if len(special) >= SPGistOpaqueSize {
@@ -334,6 +465,14 @@ func buildSpecialInfo(p *Page) map[string]string {
 			default:
 				info["page_type"] = fmt.Sprintf("0x%04X", pageType)
 			}
+		}
+		if subtype == "meta" && len(p.Data) >= PageHeaderSize+16 {
+			d := p.Data[PageHeaderSize:]
+			le := binLE
+			info["brinMagic"] = fmt.Sprintf("0x%08X", le.Uint32(d[0:4]))
+			info["brinVersion"] = fmt.Sprintf("%d", le.Uint32(d[4:8]))
+			info["pagesPerRange"] = fmt.Sprintf("%d", le.Uint32(d[8:12]))
+			info["lastRevmapPage"] = fmt.Sprintf("%d", le.Uint32(d[12:16]))
 		}
 	}
 
