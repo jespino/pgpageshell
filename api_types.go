@@ -51,6 +51,16 @@ type TupleInfo struct {
 	Properties map[string]string `json:"properties"`
 }
 
+// MetaField describes one named field (or array entry) within a
+// meta/bitmap/revmap page's content area.
+type MetaField struct {
+	Name      string `json:"name"`
+	Value     string `json:"value"`
+	StartByte int    `json:"start_byte"`
+	EndByte   int    `json:"end_byte"`
+	Size      int    `json:"size"`
+}
+
 type PageDetail struct {
 	PageNum      int               `json:"page_num"`
 	Type         string            `json:"type"`
@@ -60,6 +70,7 @@ type PageDetail struct {
 	LinePointers []LinePointerInfo `json:"line_pointers"`
 	Tuples       []TupleInfo       `json:"tuples"`
 	SpecialInfo  map[string]string `json:"special_info,omitempty"`
+	MetaFields   []MetaField       `json:"meta_fields,omitempty"`
 }
 
 type FileEntry struct {
@@ -214,6 +225,11 @@ func buildPageDetail(p *Page) PageDetail {
 	}
 	specialInfo := buildSpecialInfo(p, subtype)
 
+	var metaFields []MetaField
+	if specialSubtype {
+		metaFields = buildMetaFields(p, subtype)
+	}
+
 	return PageDetail{
 		PageNum:      p.PageNum,
 		Type:         p.Detected.String(),
@@ -223,6 +239,7 @@ func buildPageDetail(p *Page) PageDetail {
 		LinePointers: linePointers,
 		Tuples:       tuples,
 		SpecialInfo:  specialInfo,
+		MetaFields:   metaFields,
 	}
 }
 
@@ -238,6 +255,308 @@ func specialSubtypeRegionName(pageType PageType, subtype string, size int) strin
 		return fmt.Sprintf("Revmap Entries (%d entries, %d bytes)", entries, size)
 	}
 	return fmt.Sprintf("%s (%d bytes)", subtype, size)
+}
+
+// buildMetaFields returns per-field (or per-entry) metadata for
+// meta/bitmap/revmap pages so the frontend can show individual
+// cell-level tooltips instead of one opaque block.
+func buildMetaFields(p *Page, subtype string) []MetaField {
+	d := p.Data[:]
+	le := binLE
+	base := PageHeaderSize // content starts at offset 24
+
+	switch subtype {
+	case "meta":
+		return buildMetaStructFields(p, d, le, base)
+	case "bitmap":
+		return buildBitmapFields(p, d, le, base)
+	case "revmap":
+		return buildRevmapFields(p, d, le, base)
+	}
+	return nil
+}
+
+func buildMetaStructFields(p *Page, d []byte, le binary.ByteOrder, base int) []MetaField {
+	switch p.Detected {
+	case PageTypeBTree:
+		if len(d) < base+44 {
+			return nil
+		}
+		return []MetaField{
+			metaU32(d, le, base, 0, "btm_magic", "0x%08X"),
+			metaU32(d, le, base, 4, "btm_version", "%d"),
+			metaU32(d, le, base, 8, "btm_root", "%d"),
+			metaU32(d, le, base, 12, "btm_level", "%d"),
+			metaU32(d, le, base, 16, "btm_fastroot", "%d"),
+			metaU32(d, le, base, 20, "btm_fastlevel", "%d"),
+			metaU32(d, le, base, 24, "btm_last_cleanup_num_delpages", "%d"),
+			{
+				Name:      "padding",
+				Value:     "",
+				StartByte: base + 28,
+				EndByte:   base + 32,
+				Size:      4,
+			},
+			metaF64(d, le, base, 32, "btm_last_cleanup_num_heap_tuples"),
+			metaBool(d, base, 40, "btm_allequalimage"),
+			{
+				Name:      "padding",
+				Value:     "",
+				StartByte: base + 41,
+				EndByte:   base + 48,
+				Size:      7,
+			},
+		}
+
+	case PageTypeHash:
+		if len(d) < base+48 {
+			return nil
+		}
+		fields := []MetaField{
+			metaU32(d, le, base, 0, "hashm_magic", "0x%08X"),
+			metaU32(d, le, base, 4, "hashm_version", "%d"),
+			metaF64(d, le, base, 8, "hashm_ntuples"),
+			metaU16(d, le, base, 16, "hashm_ffactor", "%d"),
+			metaU16(d, le, base, 18, "hashm_bsize", "%d"),
+			metaU16(d, le, base, 20, "hashm_bmsize", "%d"),
+			metaU16(d, le, base, 22, "hashm_bmshift", "%d"),
+			metaU32(d, le, base, 24, "hashm_maxbucket", "%d"),
+			metaU32(d, le, base, 28, "hashm_highmask", "0x%08X"),
+			metaU32(d, le, base, 32, "hashm_lowmask", "0x%08X"),
+			metaU32(d, le, base, 36, "hashm_ovflpoint", "%d"),
+			metaU32(d, le, base, 40, "hashm_firstfree", "%d"),
+			metaU32(d, le, base, 44, "hashm_nmaps", "%d"),
+			metaU32(d, le, base, 48, "hashm_procid", "%d"),
+		}
+		// hashm_spares[HASH_MAX_SPLITPOINTS] = uint32[32] at offset 52
+		sparesOff := 52
+		if len(d) >= base+sparesOff+32*4 {
+			fields = append(fields, MetaField{
+				Name:      "hashm_spares[32]",
+				Value:     fmt.Sprintf("uint32[32] array"),
+				StartByte: base + sparesOff,
+				EndByte:   base + sparesOff + 32*4,
+				Size:      32 * 4,
+			})
+		}
+		// hashm_mapp[HASH_MAX_BITMAPS] at offset 180
+		mappOff := 52 + 32*4
+		linpEnd := int(p.Header.Lower)
+		if linpEnd > base+mappOff {
+			mappSize := linpEnd - (base + mappOff)
+			nMaps := mappSize / 4
+			fields = append(fields, MetaField{
+				Name:      fmt.Sprintf("hashm_mapp[%d]", nMaps),
+				Value:     fmt.Sprintf("BlockNumber[%d] array", nMaps),
+				StartByte: base + mappOff,
+				EndByte:   linpEnd,
+				Size:      mappSize,
+			})
+		}
+		return fields
+
+	case PageTypeGIN:
+		if len(d) < base+48 {
+			return nil
+		}
+		return []MetaField{
+			metaU32(d, le, base, 0, "head", "%d"),
+			metaU32(d, le, base, 4, "tail", "%d"),
+			metaU32(d, le, base, 8, "tailFreeSize", "%d"),
+			metaU32(d, le, base, 12, "nPendingPages", "%d"),
+			metaI64(d, le, base, 16, "nPendingHeapTuples"),
+			metaU32(d, le, base, 24, "nTotalPages", "%d"),
+			metaU32(d, le, base, 28, "nEntryPages", "%d"),
+			metaU32(d, le, base, 32, "nDataPages", "%d"),
+			{
+				Name:      "padding",
+				Value:     "",
+				StartByte: base + 36,
+				EndByte:   base + 40,
+				Size:      4,
+			},
+			metaI64(d, le, base, 40, "nEntries"),
+			metaU32(d, le, base, 48, "ginVersion", "%d"),
+			{
+				Name:      "padding",
+				Value:     "",
+				StartByte: base + 52,
+				EndByte:   base + 56,
+				Size:      4,
+			},
+		}
+
+	case PageTypeBRIN:
+		if len(d) < base+16 {
+			return nil
+		}
+		return []MetaField{
+			metaU32(d, le, base, 0, "brinMagic", "0x%08X"),
+			metaU32(d, le, base, 4, "brinVersion", "%d"),
+			metaU32(d, le, base, 8, "pagesPerRange", "%d"),
+			metaU32(d, le, base, 12, "lastRevmapPage", "%d"),
+		}
+
+	case PageTypeSPGiST:
+		if len(d) < base+8 {
+			return nil
+		}
+		fields := []MetaField{
+			metaU32(d, le, base, 0, "magicNumber", "0x%08X"),
+			{
+				Name:      "padding",
+				Value:     "",
+				StartByte: base + 4,
+				EndByte:   base + 8,
+				Size:      4,
+			},
+		}
+		// SpGistLUPCache: 8 entries × 8 bytes each
+		lupOff := 8
+		if len(d) >= base+lupOff+64 {
+			for i := 0; i < 8; i++ {
+				off := lupOff + i*8
+				blk := le.Uint32(d[base+off : base+off+4])
+				offnum := le.Uint16(d[base+off+4 : base+off+6])
+				fields = append(fields, MetaField{
+					Name:      fmt.Sprintf("lastUsedPages[%d]", i),
+					Value:     fmt.Sprintf("block=%d, offset=%d", blk, offnum),
+					StartByte: base + off,
+					EndByte:   base + off + 8,
+					Size:      8,
+				})
+			}
+		}
+		return fields
+	}
+	return nil
+}
+
+func buildBitmapFields(p *Page, d []byte, le binary.ByteOrder, base int) []MetaField {
+	linpEnd := int(p.Header.Lower)
+	if linpEnd <= base {
+		return nil
+	}
+	nWords := (linpEnd - base) / 4
+	fields := make([]MetaField, 0, nWords)
+	for i := 0; i < nWords; i++ {
+		off := base + i*4
+		if off+4 > len(d) {
+			break
+		}
+		word := le.Uint32(d[off : off+4])
+		set := popcount32(word)
+		fields = append(fields, MetaField{
+			Name:      fmt.Sprintf("word[%d]", i),
+			Value:     fmt.Sprintf("0x%08X (%d/32 bits set)", word, set),
+			StartByte: off,
+			EndByte:   off + 4,
+			Size:      4,
+		})
+	}
+	return fields
+}
+
+func buildRevmapFields(p *Page, d []byte, le binary.ByteOrder, base int) []MetaField {
+	specialOff := int(p.Header.Special)
+	if specialOff <= base {
+		return nil
+	}
+	contentSize := specialOff - base
+	nEntries := contentSize / 6
+	fields := make([]MetaField, 0, nEntries)
+	for i := 0; i < nEntries; i++ {
+		off := base + i*6
+		if off+6 > len(d) {
+			break
+		}
+		// ItemPointerData: ip_blkid (2×uint16 = BlockIdData) + ip_posid (uint16)
+		blkHi := le.Uint16(d[off : off+2])
+		blkLo := le.Uint16(d[off+2 : off+4])
+		blk := uint32(blkHi)<<16 | uint32(blkLo)
+		posid := le.Uint16(d[off+4 : off+6])
+
+		var value string
+		if blk == 0 && posid == 0 {
+			value = "(invalid)"
+		} else {
+			value = fmt.Sprintf("(%d, %d)", blk, posid)
+		}
+		fields = append(fields, MetaField{
+			Name:      fmt.Sprintf("range[%d]", i),
+			Value:     value,
+			StartByte: off,
+			EndByte:   off + 6,
+			Size:      6,
+		})
+	}
+	return fields
+}
+
+// Helper functions for building MetaField entries from raw bytes.
+
+func metaU32(d []byte, le binary.ByteOrder, base, off int, name, format string) MetaField {
+	v := le.Uint32(d[base+off : base+off+4])
+	return MetaField{
+		Name:      name,
+		Value:     fmt.Sprintf(format, v),
+		StartByte: base + off,
+		EndByte:   base + off + 4,
+		Size:      4,
+	}
+}
+
+func metaU16(d []byte, le binary.ByteOrder, base, off int, name, format string) MetaField {
+	v := le.Uint16(d[base+off : base+off+2])
+	return MetaField{
+		Name:      name,
+		Value:     fmt.Sprintf(format, v),
+		StartByte: base + off,
+		EndByte:   base + off + 2,
+		Size:      2,
+	}
+}
+
+func metaF64(d []byte, le binary.ByteOrder, base, off int, name string) MetaField {
+	v := math.Float64frombits(le.Uint64(d[base+off : base+off+8]))
+	return MetaField{
+		Name:      name,
+		Value:     fmt.Sprintf("%.0f", v),
+		StartByte: base + off,
+		EndByte:   base + off + 8,
+		Size:      8,
+	}
+}
+
+func metaI64(d []byte, le binary.ByteOrder, base, off int, name string) MetaField {
+	v := int64(le.Uint64(d[base+off : base+off+8]))
+	return MetaField{
+		Name:      name,
+		Value:     fmt.Sprintf("%d", v),
+		StartByte: base + off,
+		EndByte:   base + off + 8,
+		Size:      8,
+	}
+}
+
+func metaBool(d []byte, base, off int, name string) MetaField {
+	v := d[base+off] != 0
+	return MetaField{
+		Name:      name,
+		Value:     fmt.Sprintf("%t", v),
+		StartByte: base + off,
+		EndByte:   base + off + 1,
+		Size:      1,
+	}
+}
+
+func popcount32(x uint32) int {
+	n := 0
+	for x != 0 {
+		n++
+		x &= x - 1
+	}
+	return n
 }
 
 func detectPageSubtype(p *Page) string {

@@ -38,6 +38,14 @@ export interface TupleInfo {
   properties: Record<string, string>;
 }
 
+export interface MetaField {
+  name: string;
+  value: string;
+  start_byte: number;
+  end_byte: number;
+  size: number;
+}
+
 export interface PageDetail {
   page_num: number;
   type: string;
@@ -47,6 +55,7 @@ export interface PageDetail {
   line_pointers: LinePointerInfo[];
   tuples: TupleInfo[];
   special_info?: Record<string, string>;
+  meta_fields?: MetaField[];
 }
 
 export interface TooltipContent {

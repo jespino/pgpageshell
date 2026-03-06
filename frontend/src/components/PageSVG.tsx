@@ -85,9 +85,50 @@ function buildCellMap(detail: PageDetail): CellInfo[] {
     });
   }
 
-  // Structured data regions for special page subtypes
+  // Structured data regions for special page subtypes.
+  // If meta_fields are available, map each field to its byte range
+  // so individual cells get per-field tooltips.
+  const metaFields = detail.meta_fields ?? [];
   for (const structRegion of [metaRegion, bitmapRegion, revmapRegion]) {
-    if (structRegion && structRegion.size > 0) {
+    if (!structRegion || structRegion.size <= 0) continue;
+
+    if (metaFields.length > 0) {
+      // Fill per-field cells
+      for (const field of metaFields) {
+        if (field.start_byte < structRegion.start_byte || field.end_byte > structRegion.end_byte) continue;
+        const rows: [string, string | number][] = [
+          ["Field", field.name],
+          ["Value", field.value],
+          ["Offset", `${field.start_byte} – ${field.end_byte - 1}`],
+          ["Size", `${field.size} bytes`],
+        ];
+        fillRange(field.start_byte, field.end_byte, {
+          regionType: structRegion.region_type,
+          label: `${field.name} = ${field.value}`,
+          tooltip: { title: field.name, rows },
+          select: { type: "region", data: structRegion },
+        });
+      }
+      // Fill any gaps within the region that aren't covered by fields
+      // (shouldn't happen normally, but defensive)
+      const startCell = Math.floor(structRegion.start_byte / BYTES_PER_CELL);
+      const endCell = Math.ceil(structRegion.end_byte / BYTES_PER_CELL);
+      for (let i = startCell; i < endCell && i < cells.length; i++) {
+        if (!cells[i]) {
+          const byteOff = i * BYTES_PER_CELL;
+          fillRange(byteOff, byteOff + BYTES_PER_CELL, {
+            regionType: structRegion.region_type,
+            label: structRegion.name,
+            tooltip: {
+              title: structRegion.name,
+              rows: [["Offset", `${byteOff} – ${byteOff + BYTES_PER_CELL - 1}`]],
+            },
+            select: { type: "region", data: structRegion },
+          });
+        }
+      }
+    } else {
+      // Fallback: single block
       const tooltipRows: [string, string | number][] = [
         ["Offset", `${structRegion.start_byte} – ${structRegion.end_byte - 1}`],
         ["Size", `${structRegion.size} bytes`],
@@ -197,6 +238,7 @@ export function PageSVG({
     [detail]
   );
   const tuples = detail.tuples ?? [];
+  const metaFields = detail.meta_fields ?? [];
 
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [hoveredRegion, setHoveredRegion] = useState<string | null>(null);
@@ -293,6 +335,40 @@ export function PageSVG({
 
       {/* Right: items list */}
       <div className="items-panel">
+        {metaFields.length > 0 && (
+          <div className="items-section">
+            <div className="items-section-title">
+              {detail.page_subtype === "bitmap" ? "Bitmap Words" :
+               detail.page_subtype === "revmap" ? "Revmap Entries" :
+               "Meta Fields"} ({metaFields.length})
+            </div>
+            {metaFields.map((f, i) => {
+              const regionType = detail.page_subtype ?? "meta";
+              const color = REGION_COLORS[regionType] ?? REGION_COLORS.meta;
+              return (
+                <div
+                  key={`mf-${i}`}
+                  className="item-row"
+                  onMouseMove={(evt) => {
+                    showTooltip(evt, {
+                      title: f.name,
+                      rows: [
+                        ["Value", f.value],
+                        ["Offset", `${f.start_byte} – ${f.end_byte - 1}`],
+                        ["Size", `${f.size} bytes`],
+                      ],
+                    });
+                  }}
+                  onMouseLeave={() => { hideTooltip(); }}
+                >
+                  <span className="item-dot" style={{ background: color.text }} />
+                  <span className="item-label">{f.name}</span>
+                  <span className="item-meta">{f.value}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
         {tuples.length > 0 && (
           <div className="items-section">
             <div className="items-section-title">Tuples ({tuples.length})</div>
