@@ -81,6 +81,18 @@ body {
   border-color: #58a6ff;
 }
 
+.topbar-link {
+  margin-left: auto;
+  font-size: 11px;
+  color: #8b949e;
+  text-decoration: none;
+  transition: color 0.15s;
+}
+
+.topbar-link:hover {
+  color: #58a6ff;
+}
+
 .topbar-btn-danger:hover {
   background: #3d1f28;
   border-color: #f85149;

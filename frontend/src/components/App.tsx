@@ -8,9 +8,10 @@ import { DetailPanel } from "./DetailPanel";
 
 interface AppProps {
   backend: DataBackend;
+  repoUrl?: string;
 }
 
-export function App({ backend }: AppProps) {
+export function App({ backend, repoUrl }: AppProps) {
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [selectedFileIdx, setSelectedFileIdx] = useState(0);
   const [fileInfo, setFileInfo] = useState<FileInfo | null>(null);
@@ -131,6 +132,11 @@ export function App({ backend }: AppProps) {
           >
             Close File
           </button>
+        )}
+        {repoUrl && (
+          <a href={repoUrl} target="_blank" rel="noopener noreferrer" className="topbar-link">
+            GitHub
+          </a>
         )}
       </div>
       <div className="main-content">

@@ -8,6 +8,6 @@ const backend = createStaticBackend(import.meta.env.BASE_URL + "data.json");
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <App backend={backend} />
+    <App backend={backend} repoUrl="https://github.com/jespino/pgpageshell" />
   </StrictMode>
 );
